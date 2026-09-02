@@ -319,22 +319,25 @@
   </div>
 </div>
 
-<!-- Cart sheet backdrop -->
-<div id="cartBackdrop" class="md:hidden hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onclick="closeMobileCart()"></div>
+<div id="cartBackdrop" class="hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity" onclick="closeMobileCart()"></div>
 
-<!-- ▌MOBILE CART FAB ▐ -->
 <button id="cartFab" onclick="openMobileCart()"
-  class="md:hidden hidden fixed bottom-5 right-4 z-30 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-full shadow-xl flex items-center justify-center transition">
+  class="hidden fixed bottom-5 right-4 z-[55] w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-full shadow-xl flex items-center justify-center transition hover:scale-105 active:scale-95">
   <i class="fa-solid fa-cart-shopping text-xl"></i>
   <span id="cartFabCount" class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center hidden">0</span>
 </button>
 
 <!-- ▌DESKTOP CART PANEL ▐ -->
 <div id="cartDesktop"
-  class="hidden w-80 bg-white border-l border-slate-200 flex flex-col shadow-xl shrink-0 fixed right-0 top-14 bottom-0 z-10">
+  class="hidden w-80 bg-white border-l border-slate-200 flex flex-col shadow-xl shrink-0 fixed right-0 top-14 bottom-0 z-50 transform translate-x-full transition-transform duration-300">
   <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between shrink-0">
-    <h2 class="font-bold text-slate-800 text-sm"><i class="fa-solid fa-cart-shopping text-indigo-500 mr-1.5"></i>Carrito</h2>
-    <span id="cartBadge" class="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded-full">0</span>
+    <div class="flex items-center gap-2">
+      <h2 class="font-bold text-slate-800 text-sm"><i class="fa-solid fa-cart-shopping text-indigo-500 mr-1.5"></i>Carrito</h2>
+      <span id="cartBadge" class="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded-full">0</span>
+    </div>
+    <button onclick="closeMobileCart()" class="text-slate-400 hover:text-slate-600 p-1 transition">
+      <i class="fa-solid fa-xmark text-lg"></i>
+    </button>
   </div>
   <div id="cartListDesktop" class="flex-1 overflow-y-auto p-2 space-y-1.5"></div>
   <div class="px-4 py-3 border-t border-slate-100 bg-slate-50 shrink-0">
@@ -1117,12 +1120,9 @@ auth.onAuthStateChanged(async user => {
 });
 
 function showCart(on){
-  // Desktop
-  const dc = g('cartDesktop');
-  dc.classList.toggle('hidden', !on);
-  dc.style.display = on ? 'flex' : 'none';
-  // Mobile FAB
+  // Solo mostramos la burbuja flotante (FAB) cuando está logueado
   g('cartFab').classList.toggle('hidden', !on);
+  
   // Add to cart area
   g('addToCartArea').classList.toggle('hidden', !on);
   // Quick access + customer display link (seller/admin only)
@@ -1325,16 +1325,41 @@ function renderCart(){
   scheduleCustomerDisplayPush();
 }
 
-/* Mobile cart bottom sheet */
+/* Toggle cart drawer/sheet for Mobile & PC */
 function openMobileCart(){
-  g('cartSheet').classList.add('open');
+  g('cartFab').classList.add('hidden'); // <-- Oculta la burbuja flotante
   g('cartBackdrop').classList.remove('hidden');
-  document.body.style.overflow='hidden';
+  
+  if (window.innerWidth < 768) {
+    // Modo móvil: Bottom sheet
+    g('cartSheet').classList.add('open');
+    document.body.style.overflow='hidden';
+  } else {
+    // Modo Escritorio: Slide panel lateral
+    const dc = g('cartDesktop');
+    dc.classList.remove('hidden');
+    // Usamos requestAnimationFrame para que la transición sea fluida
+    requestAnimationFrame(() => {
+      dc.classList.remove('translate-x-full');
+      dc.classList.add('translate-x-0');
+    });
+  }
 }
+
 function closeMobileCart(){
-  g('cartSheet').classList.remove('open');
+  g('cartFab').classList.remove('hidden'); // <-- Vuelve a mostrar la burbuja flotante
   g('cartBackdrop').classList.add('hidden');
+  g('cartSheet').classList.remove('open');
   document.body.style.overflow='';
+  
+  const dc = g('cartDesktop');
+  if (dc) {
+    dc.classList.remove('translate-x-0');
+    dc.classList.add('translate-x-full');
+    
+    // Lo ocultamos totalmente después de la animación para que no intercepte clics
+    setTimeout(() => dc.classList.add('hidden'), 300);
+  }
 }
 
 /* ════════════════════════════════════
