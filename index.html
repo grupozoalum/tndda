@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>POS · Tienda</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:'Segoe UI',system-ui,sans-serif}
+    .scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#6366f1,transparent);box-shadow:0 0 6px #6366f1;animation:scanMove 1.8s ease-in-out infinite;pointer-events:none}
+    @keyframes scanMove{0%{top:5%;opacity:0}10%{opacity:1}90%{opacity:1}100%{top:95%;opacity:0}}
+    .admin-tab-btn{color:#6b7280;transition:all .15s}
+    .admin-tab-btn:hover{background:#1f2937;color:#e5e7eb}
+    .admin-tab-btn.active{background:#4f46e5;color:#fff}
+    .period-btn{transition:all .15s}
+    .period-btn.active{background:#4f46e5;color:#fff;border-color:#4f46e5}
+    .dot-on{background:#10b981;animation:pulse 1.5s infinite}
+    .dot-off{background:#6b7280}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    ::-webkit-scrollbar{width:5px}
+    ::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:4px}
+    #toast{transition:transform .3s cubic-bezier(.34,1.56,.64,1)}
+    #toast.show{transform:translateX(0)!important}
+    .modal-bg{backdrop-filter:blur(3px)}
+    #terminalQRCode img,#terminalQRCode canvas{width:80px!important;height:80px!important}
+  </style>
+</head>
+<body class="bg-slate-100 overflow-hidden h-screen">
+
+<!-- TOAST -->
+<div id="toast" class="fixed top-4 right-4 z-[200] transform translate-x-[120%]">
+  <div id="toastInner" class="flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border min-w-[260px] bg-white">
+    <i id="toastIcon" class="text-lg w-5 text-center"></i>
+    <p id="toastMsg" class="text-sm font-medium text-gray-800 flex-1"></p>
+  </div>
+</div>
+
+<!-- NAVBAR -->
+<nav class="h-14 bg-indigo-700 text-white flex items-center justify-between px-4 shadow-lg fixed w-full top-0 z-40">
+  <div class="flex items-center gap-3">
+    <span class="text-2xl">🏪</span>
+    <span class="font-bold text-base tracking-tight hidden sm:inline">Tienda POS</span>
+    <span id="modeTag" class="text-xs bg-white/15 border border-white/20 px-2.5 py-0.5 rounded-full">Consulta de Precios</span>
+  </div>
+  <div class="flex items-center gap-3 text-sm">
+    <div id="syncIndicator" class="hidden sm:flex items-center gap-1.5 text-xs text-indigo-200">
+      <span id="syncDot" class="inline-block w-2 h-2 rounded-full dot-off"></span>
+      <span id="syncText">Sin escáner remoto</span>
+    </div>
+    <div class="w-px h-4 bg-indigo-500 hidden sm:block"></div>
+    <button id="navLoginBtn" onclick="showLoginModal()"
+      class="bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5">
+      <i class="fa-solid fa-sign-in-alt"></i><span class="hidden sm:inline">Iniciar Sesión</span>
+    </button>
+    <div id="navUserArea" class="hidden items-center gap-2">
+      <span id="navUserName" class="text-xs text-indigo-200 max-w-[130px] truncate"></span>
+      <button onclick="logout()" class="bg-red-500/80 hover:bg-red-500 px-2 py-1 rounded-lg text-xs transition">
+        <i class="fa-solid fa-right-from-bracket"></i>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- MAIN LAYOUT -->
+<div class="fixed inset-0 top-14 flex">
+
+  <!-- LEFT POS AREA -->
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <!-- Search -->
+    <div class="bg-white border-b border-slate-200 px-3 py-2.5 shadow-sm">
+      <div class="flex gap-2">
+        <div class="relative flex-1">
+          <i class="fa-solid fa-barcode absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+          <input id="searchInput" type="text" placeholder="Buscar producto o código de barras…"
+            class="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            onkeydown="if(event.key==='Enter') doSearch()">
+        </div>
+        <button onclick="openScanModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2.5 rounded-xl transition flex items-center gap-2 text-sm font-medium">
+          <i class="fa-solid fa-camera"></i><span class="hidden sm:inline">Escanear</span>
+        </button>
+        <button onclick="doSearch()" class="bg-slate-600 hover:bg-slate-700 text-white px-3.5 py-2.5 rounded-xl transition text-sm">
+          <i class="fa-solid fa-magnifying-glass"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="flex-1 overflow-y-auto p-3 space-y-3">
+
+      <!-- Phone scanner banner -->
+      <div id="phoneBanner" class="hidden bg-indigo-600 text-white rounded-xl p-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="font-bold"><i class="fa-solid fa-mobile-screen-button mr-1"></i>Modo Escáner Activo</p>
+            <p class="text-indigo-200 text-xs mt-0.5">Conectado a: <code id="phoneTargetId" class="bg-indigo-800 px-1 rounded text-xs"></code></p>
+            <p class="text-indigo-300 text-xs mt-1">Cada escaneo se refleja en tiempo real en la caja</p>
+          </div>
+          <i class="fa-solid fa-wifi text-3xl text-indigo-300"></i>
+        </div>
+      </div>
+
+      <!-- Terminal sync card -->
+      <div id="terminalCard" class="bg-white rounded-xl border border-slate-200 shadow-sm">
+        <button onclick="toggleTermCard()" class="w-full flex items-center justify-between px-4 py-3 text-left">
+          <div class="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <i class="fa-solid fa-network-wired text-indigo-500"></i>Conexión multi-dispositivo
+          </div>
+          <i id="termChevron" class="fa-solid fa-chevron-down text-slate-400 text-xs transition-transform"></i>
+        </button>
+        <div id="termCardBody" class="px-4 pb-4 flex gap-4 items-start">
+          <div id="terminalQRCode" class="w-20 h-20 flex-shrink-0 bg-slate-50 rounded-lg border border-slate-200 overflow-hidden flex items-center justify-center"></div>
+          <div class="flex-1 min-w-0">
+            <p class="text-xs text-slate-400 mb-0.5">ID de esta terminal</p>
+            <code id="terminalIdEl" class="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded block font-mono mb-2 truncate"></code>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              En tu celular abre esta misma URL y agrega <strong class="text-slate-600">?scan=ID</strong>, o usa el botón de copiar.
+            </p>
+            <button onclick="copyScanLink()" class="mt-2 text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+              <i class="fa-solid fa-copy mr-1"></i>Copiar enlace de escáner
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Welcome -->
+      <div id="stateWelcome" class="flex flex-col items-center justify-center py-16 text-center">
+        <div class="text-6xl mb-4">🔍</div>
+        <h2 class="text-xl font-bold text-slate-600 mb-2">Listo para escanear</h2>
+        <p class="text-slate-400 text-sm max-w-xs leading-relaxed">Escanea un código de barras o escribe el nombre del producto.</p>
+        <p class="text-xs text-slate-300 mt-5">
+          <kbd class="bg-slate-100 text-slate-500 px-2 py-1 rounded border border-slate-300 font-sans">Ctrl + Shift + A</kbd>
+          <span class="mx-2 text-slate-200">·</span>Panel Admin
+        </p>
+      </div>
+
+      <!-- Not found -->
+      <div id="stateNotFound" class="hidden bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+        <div class="text-4xl mb-2">❌</div>
+        <p class="font-bold text-red-700">Producto no encontrado</p>
+        <p id="notFoundCode" class="text-red-400 text-sm mt-1"></p>
+        <button id="addFromScanBtn" onclick="showProductModal(true)"
+          class="hidden mt-4 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+          <i class="fa-solid fa-plus mr-1"></i>Agregar este producto
+        </button>
+      </div>
+
+      <!-- Product display -->
+      <div id="stateProduct" class="hidden bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="bg-gradient-to-br from-indigo-50 to-violet-50 px-5 py-5">
+          <div class="flex justify-between items-start gap-4">
+            <div class="flex-1 min-w-0">
+              <p id="pdBarcode" class="text-xs font-mono text-slate-400 mb-1"></p>
+              <h2 id="pdName" class="text-2xl font-black text-slate-800 leading-tight mb-1"></h2>
+              <span id="pdCategory" class="text-xs text-slate-500 bg-white/70 px-2 py-0.5 rounded-full"></span>
+            </div>
+            <div class="text-right flex-shrink-0">
+              <p id="pdPrice" class="text-4xl font-black text-indigo-600"></p>
+              <p class="text-xs text-slate-400 mt-0.5">precio unitario</p>
+            </div>
+          </div>
+        </div>
+        <div id="addToCartArea" class="hidden px-5 py-4 border-t border-slate-100">
+          <div class="flex items-center gap-2">
+            <div class="flex items-center border border-slate-200 rounded-lg overflow-hidden">
+              <button onclick="changeQty(-1)" class="px-3 py-2 bg-slate-50 hover:bg-slate-100 font-bold text-slate-600 text-lg leading-none">−</button>
+              <input id="qtyInput" type="number" value="1" min="1" class="w-12 text-center py-2 text-sm font-bold border-0 focus:outline-none">
+              <button onclick="changeQty(1)" class="px-3 py-2 bg-slate-50 hover:bg-slate-100 font-bold text-slate-600 text-lg leading-none">+</button>
+            </div>
+            <button onclick="addToCart()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-semibold text-sm transition">
+              <i class="fa-solid fa-cart-plus mr-1.5"></i>Agregar al carrito
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- RIGHT CART -->
+  <div id="cartPanel" class="hidden w-72 lg:w-80 bg-white border-l border-slate-200 flex flex-col shadow-xl">
+    <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+      <h2 class="font-bold text-slate-800 text-sm"><i class="fa-solid fa-cart-shopping text-indigo-500 mr-1.5"></i>Carrito</h2>
+      <span id="cartBadge" class="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded-full">0</span>
+    </div>
+    <div id="cartList" class="flex-1 overflow-y-auto p-2 space-y-1.5">
+      <div id="cartEmpty" class="flex flex-col items-center justify-center h-32 text-slate-300 text-sm">
+        <i class="fa-solid fa-cart-shopping text-3xl mb-2"></i>Carrito vacío
+      </div>
+    </div>
+    <div class="px-4 py-3 border-t border-slate-100 bg-slate-50">
+      <div class="flex justify-between text-sm text-slate-500 mb-1">
+        <span>Subtotal</span><span id="cartSubtotal" class="font-semibold">$0.00</span>
+      </div>
+      <div class="flex justify-between items-center mb-3">
+        <span class="font-bold text-slate-800">Total</span>
+        <span id="cartTotal" class="font-black text-xl text-indigo-700">$0.00</span>
+      </div>
+      <button id="checkoutBtn" onclick="showPaymentModal()" disabled
+        class="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white py-2.5 rounded-xl font-bold text-sm transition">
+        <i class="fa-solid fa-money-bill-wave mr-1.5"></i>Cobrar
+      </button>
+      <button onclick="clearCart()" class="w-full mt-1.5 text-red-400 hover:text-red-600 text-xs py-1.5 transition">
+        <i class="fa-solid fa-trash mr-1"></i>Vaciar carrito
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ ADMIN PANEL ═══ -->
+<div id="adminPanel" class="hidden fixed inset-0 z-50 flex" style="top:0">
+  <div class="w-56 bg-gray-950 text-gray-300 flex flex-col flex-shrink-0 shadow-2xl">
+    <div class="px-5 py-5 border-b border-gray-800">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 dot-on inline-block"></span>
+        <span class="text-xs text-emerald-400 font-semibold uppercase tracking-widest">Admin</span>
+      </div>
+      <p class="font-bold text-white text-base">Panel de Control</p>
+      <p id="adminEmailLabel" class="text-gray-500 text-xs mt-0.5 truncate"></p>
+    </div>
+    <nav class="flex-1 px-3 py-3 space-y-0.5">
+      <button class="admin-tab-btn w-full text-left px-3 py-2.5 rounded-lg text-sm flex items-center gap-2.5" id="tab-metrics" onclick="switchTab('metrics')">
+        <i class="fa-solid fa-chart-line w-4 text-center"></i>Métricas
+      </button>
+      <button class="admin-tab-btn w-full text-left px-3 py-2.5 rounded-lg text-sm flex items-center gap-2.5" id="tab-products" onclick="switchTab('products')">
+        <i class="fa-solid fa-boxes-stacked w-4 text-center"></i>Productos
+      </button>
+      <button class="admin-tab-btn w-full text-left px-3 py-2.5 rounded-lg text-sm flex items-center gap-2.5" id="tab-sellers" onclick="switchTab('sellers')">
+        <i class="fa-solid fa-users w-4 text-center"></i>Vendedores
+      </button>
+      <button class="admin-tab-btn w-full text-left px-3 py-2.5 rounded-lg text-sm flex items-center gap-2.5" id="tab-history" onclick="switchTab('history')">
+        <i class="fa-solid fa-receipt w-4 text-center"></i>Historial
+      </button>
+    </nav>
+    <div class="px-3 py-3 border-t border-gray-800 space-y-1">
+      <button onclick="closeAdmin()" class="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-400 hover:bg-gray-800 hover:text-gray-200 flex items-center gap-2 transition">
+        <i class="fa-solid fa-arrow-left"></i>Volver al POS
+      </button>
+      <button onclick="logout()" class="w-full text-left px-3 py-2 rounded-lg text-sm text-red-400 hover:text-red-300 flex items-center gap-2 transition">
+        <i class="fa-solid fa-right-from-bracket"></i>Cerrar Sesión
+      </button>
+    </div>
+  </div>
+
+  <div class="flex-1 bg-slate-100 overflow-y-auto">
+
+    <!-- MÉTRICAS -->
+    <div id="admin-metrics" class="admin-content p-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <h1 class="text-xl font-black text-slate-800">📊 Métricas del Negocio</h1>
+        <div class="flex gap-1.5">
+          <button class="period-btn px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 bg-white text-slate-600" data-period="day" onclick="loadMetrics('day')">Hoy</button>
+          <button class="period-btn px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 bg-white text-slate-600" data-period="week" onclick="loadMetrics('week')">Semana</button>
+          <button class="period-btn px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 bg-white text-slate-600" data-period="month" onclick="loadMetrics('month')">Mes</button>
+          <button class="period-btn px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 bg-white text-slate-600" data-period="year" onclick="loadMetrics('year')">Año</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <p class="text-xs text-slate-400 mb-1">Total Vendido</p>
+          <p id="kpiTotal" class="text-2xl font-black text-indigo-600">…</p>
+          <p id="kpiPeriodLabel" class="text-xs text-slate-400 mt-0.5">Hoy</p>
+        </div>
+        <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <p class="text-xs text-slate-400 mb-1">Efectivo en Caja</p>
+          <p id="kpiCash" class="text-2xl font-black text-emerald-600">…</p>
+          <p class="text-xs text-slate-400 mt-0.5">Pagos en efectivo</p>
+        </div>
+        <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <p class="text-xs text-slate-400 mb-1">Transacciones</p>
+          <p id="kpiTx" class="text-2xl font-black text-violet-600">…</p>
+          <p class="text-xs text-slate-400 mt-0.5">Ventas realizadas</p>
+        </div>
+        <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <p class="text-xs text-slate-400 mb-1">Ticket Promedio</p>
+          <p id="kpiAvg" class="text-2xl font-black text-orange-500">…</p>
+          <p class="text-xs text-slate-400 mt-0.5">Por venta</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+        <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <p class="text-sm font-semibold text-slate-700 mb-3">Ventas por día</p>
+          <canvas id="chartSales" height="180"></canvas>
+        </div>
+        <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <p class="text-sm font-semibold text-slate-700 mb-3">Ventas por vendedor</p>
+          <canvas id="chartSellers" height="180"></canvas>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <p class="text-sm font-semibold text-slate-700 mb-3">🏆 Más vendidos</p>
+          <div id="topProdsEl" class="space-y-2"></div>
+        </div>
+        <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <p class="text-sm font-semibold text-slate-700 mb-3">📉 Menos vendidos</p>
+          <div id="botProdsEl" class="space-y-2"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRODUCTOS -->
+    <div id="admin-products" class="admin-content hidden p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="text-xl font-black text-slate-800">📦 Productos</h1>
+        <button onclick="showProductModal(false)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-plus"></i>Agregar
+        </button>
+      </div>
+      <input id="prodFilter" type="text" placeholder="Buscar productos…" oninput="filterProdTable()"
+        class="w-full mb-3 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-slate-500 font-semibold">Código</th>
+                <th class="text-left px-4 py-3 text-slate-500 font-semibold">Nombre</th>
+                <th class="text-left px-4 py-3 text-slate-500 font-semibold hidden md:table-cell">Categoría</th>
+                <th class="text-right px-4 py-3 text-slate-500 font-semibold">Precio</th>
+                <th class="text-center px-4 py-3 text-slate-500 font-semibold hidden md:table-cell">Estado</th>
+                <th class="text-right px-4 py-3 text-slate-500 font-semibold">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="prodTableBody" class="divide-y divide-slate-100">
+              <tr><td colspan="6" class="text-center py-10 text-slate-400">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VENDEDORES -->
+    <div id="admin-sellers" class="admin-content hidden p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="text-xl font-black text-slate-800">👥 Vendedores</h1>
+        <button onclick="showSellerModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-user-plus"></i>Agregar
+        </button>
+      </div>
+      <div id="sellersGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div class="col-span-3 text-center py-10 text-slate-400">Cargando…</div>
+      </div>
+    </div>
+
+    <!-- HISTORIAL -->
+    <div id="admin-history" class="admin-content hidden p-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h1 class="text-xl font-black text-slate-800">🧾 Historial de Ventas</h1>
+        <div class="flex flex-wrap gap-2">
+          <select id="histSellerFilter" onchange="loadHistory()" class="border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none bg-white">
+            <option value="">Todos los vendedores</option>
+          </select>
+          <input type="date" id="histStart" onchange="loadHistory()" class="border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none bg-white">
+          <input type="date" id="histEnd" onchange="loadHistory()" class="border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none bg-white">
+          <button onclick="exportCSV()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1 transition">
+            <i class="fa-solid fa-download"></i>CSV
+          </button>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-4 py-3 text-slate-500 font-semibold">Fecha / Hora</th>
+                <th class="text-left px-4 py-3 text-slate-500 font-semibold hidden sm:table-cell">Vendedor</th>
+                <th class="text-center px-4 py-3 text-slate-500 font-semibold">Items</th>
+                <th class="text-right px-4 py-3 text-slate-500 font-semibold">Total</th>
+                <th class="text-center px-4 py-3 text-slate-500 font-semibold hidden md:table-cell">Pago</th>
+                <th class="text-right px-4 py-3 text-slate-500 font-semibold">Ver</th>
+              </tr>
+            </thead>
+            <tbody id="histTableBody" class="divide-y divide-slate-100">
+              <tr><td colspan="6" class="text-center py-10 text-slate-400">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══ MODALS ═══ -->
+
+<!-- LOGIN -->
+<div id="loginModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center modal-bg bg-black/50">
+  <div class="bg-white rounded-2xl shadow-2xl p-7 w-full max-w-sm mx-4">
+    <div class="text-center mb-5">
+      <div class="text-4xl mb-2">🔐</div>
+      <h2 class="text-xl font-black text-slate-800">Iniciar Sesión</h2>
+      <p class="text-slate-400 text-xs mt-1">Vendedores y administrador</p>
+    </div>
+    <div class="space-y-3">
+      <input id="loginEmail" type="email" placeholder="Correo electrónico"
+        class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      <input id="loginPwd" type="password" placeholder="Contraseña"
+        class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        onkeydown="if(event.key==='Enter') doLogin()">
+      <p id="loginErr" class="text-red-500 text-xs hidden px-1"></p>
+      <button onclick="doLogin()" id="loginSubmitBtn"
+        class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-sm transition">
+        <i class="fa-solid fa-sign-in-alt mr-1.5"></i>Entrar
+      </button>
+      <button onclick="hideLoginModal()" class="w-full text-slate-400 hover:text-slate-600 text-xs py-1 transition">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCANNER -->
+<div id="scanModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center modal-bg bg-black/50">
+  <div class="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-sm mx-4">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-bold text-slate-800"><i class="fa-solid fa-camera text-indigo-500 mr-1.5"></i>Escanear código</h3>
+      <button onclick="closeScanModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+    </div>
+    <div class="relative bg-black rounded-xl overflow-hidden" style="height:280px;">
+      <div id="scanReader" style="width:100%;height:100%;"></div>
+      <div class="scan-line" style="left:0;right:0;"></div>
+    </div>
+    <p class="text-center text-xs text-slate-400 mt-3">Apunta la cámara al código de barras</p>
+  </div>
+</div>
+
+<!-- PAYMENT -->
+<div id="payModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center modal-bg bg-black/50">
+  <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-bold text-slate-800 text-lg"><i class="fa-solid fa-cash-register text-emerald-600 mr-2"></i>Cobrar Venta</h3>
+      <button onclick="hidePayModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+    </div>
+    <div id="payItemsSummary" class="bg-slate-50 rounded-xl p-3 max-h-36 overflow-y-auto text-sm space-y-1 mb-4"></div>
+    <div class="flex justify-between items-center mb-4 px-1">
+      <span class="font-bold text-slate-700">Total</span>
+      <span id="payTotal" class="font-black text-2xl text-indigo-700"></span>
+    </div>
+    <div class="grid grid-cols-2 gap-2 mb-4">
+      <button id="payBtnCash" onclick="selectPayMethod('cash')"
+        class="border-2 border-emerald-500 bg-emerald-50 text-emerald-700 py-3 rounded-xl font-semibold text-sm">
+        <i class="fa-solid fa-money-bill-wave text-lg block mb-0.5"></i>Efectivo
+      </button>
+      <button id="payBtnCard" onclick="selectPayMethod('card')"
+        class="border-2 border-slate-200 bg-slate-50 text-slate-500 py-3 rounded-xl font-semibold text-sm">
+        <i class="fa-solid fa-credit-card text-lg block mb-0.5"></i>Tarjeta
+      </button>
+    </div>
+    <div id="cashArea" class="mb-4">
+      <p class="text-xs text-slate-500 mb-1.5">Monto recibido</p>
+      <input id="cashInput" type="number" placeholder="0.00" min="0" step="0.50" oninput="calcChange()"
+        class="w-full border border-slate-200 rounded-xl px-4 py-3 text-right text-xl font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500">
+      <div class="flex justify-between items-center mt-2 px-1">
+        <span class="text-sm text-slate-500">Cambio:</span>
+        <span id="changeDisplay" class="text-xl font-black text-emerald-600">$0.00</span>
+      </div>
+    </div>
+    <button onclick="processPayment()" id="processBtn"
+      class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold text-base transition">
+      <i class="fa-solid fa-check mr-2"></i>Confirmar Pago
+    </button>
+  </div>
+</div>
+
+<!-- PRODUCT FORM -->
+<div id="productModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center modal-bg bg-black/50">
+  <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4 max-h-[92vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-5">
+      <h3 id="productModalTitle" class="font-bold text-slate-800 text-lg">Agregar Producto</h3>
+      <button onclick="hideProductModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+    </div>
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs font-semibold text-slate-500 mb-1 block">Código de barras</label>
+        <div class="flex gap-2">
+          <input id="pf_barcode" type="text" placeholder="Ej: 7501055300895"
+            class="flex-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <button onclick="startProductScan()" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-2 rounded-xl transition">
+            <i class="fa-solid fa-camera"></i>
+          </button>
+        </div>
+        <div id="pf_scanArea" class="hidden mt-2 rounded-xl overflow-hidden" style="height:200px;">
+          <div id="pf_scanReader" style="width:100%;height:100%;background:#000;"></div>
+        </div>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-slate-500 mb-1 block">Nombre *</label>
+        <input id="pf_name" type="text" placeholder="Ej: Coca-Cola 600ml"
+          class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs font-semibold text-slate-500 mb-1 block">Precio *</label>
+          <input id="pf_price" type="number" placeholder="0.00" min="0" step="0.01"
+            class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-slate-500 mb-1 block">Stock</label>
+          <input id="pf_stock" type="number" placeholder="0" min="0"
+            class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-slate-500 mb-1 block">Categoría</label>
+        <select id="pf_category" class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+          <option>General</option><option>Bebidas</option><option>Alimentos</option>
+          <option>Snacks</option><option>Lácteos</option><option>Limpieza</option>
+          <option>Higiene Personal</option><option>Dulces</option><option>Panadería</option><option>Abarrotes</option>
+        </select>
+      </div>
+      <div class="flex gap-3 pt-1">
+        <button onclick="hideProductModal()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-xl font-semibold text-sm transition">Cancelar</button>
+        <button onclick="saveProduct()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-semibold text-sm transition">
+          <i class="fa-solid fa-floppy-disk mr-1"></i>Guardar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SELLER FORM -->
+<div id="sellerModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center modal-bg bg-black/50">
+  <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4">
+    <div class="flex items-center justify-between mb-5">
+      <h3 class="font-bold text-slate-800 text-lg">Agregar Vendedor</h3>
+      <button onclick="hideSellerModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+    </div>
+    <div class="space-y-3">
+      <input id="sf_name" type="text" placeholder="Nombre completo *"
+        class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      <input id="sf_email" type="email" placeholder="Correo electrónico *"
+        class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      <input id="sf_password" type="password" placeholder="Contraseña (mín. 6 caracteres) *"
+        class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      <p id="sellerErr" class="text-red-500 text-xs hidden px-1"></p>
+      <div class="flex gap-3 pt-1">
+        <button onclick="hideSellerModal()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-xl font-semibold text-sm transition">Cancelar</button>
+        <button onclick="saveSeller()" id="saveSellerBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-semibold text-sm transition">
+          <i class="fa-solid fa-user-plus mr-1"></i>Crear
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SALE DETAIL -->
+<div id="saleDetailModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center modal-bg bg-black/50">
+  <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4 max-h-[80vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-bold text-slate-800">Detalle de Venta</h3>
+      <button onclick="hideSaleDetail()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+    </div>
+    <div id="saleDetailContent"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     JAVASCRIPT — 100% client-side, sin backend
+═══════════════════════════════════════════════ -->
+<script>
+/* ── Firebase init ── */
+const firebaseConfig = {
+  apiKey:"AIzaSyBWORGk2Y6iScv_SMEx59VCSW2KgCD1kfs",
+  authDomain:"tienda-2d9fe.firebaseapp.com",
+  projectId:"tienda-2d9fe",
+  storageBucket:"tienda-2d9fe.firebasestorage.app",
+  messagingSenderId:"278159200068",
+  appId:"1:278159200068:web:582888438b273922b3d111"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db   = firebase.firestore();
+
+/* ── Constants ── */
+const ADMIN_UID = 'XNFA7Wr5pPfmv9Rhlb9xQQV8Vii1';
+const API_KEY   = firebaseConfig.apiKey;
+
+/* ── State ── */
+const S = {
+  user:null, isAdmin:false, isSeller:false,
+  cart:[], currentProduct:null,
+  terminalId:null, termUnsub:null,
+  payMethod:'cash',
+  sc:null, pfSc:null,
+  lastScanTs:0,
+  allProducts:[], allSellers:[],
+  editingBarcode:null,
+  charts:{},
+  histSales:[], // cached for CSV export
+};
+
+/* ══════════════════════════════════════
+   AUTH
+══════════════════════════════════════ */
+auth.onAuthStateChanged(async user => {
+  S.user = user;
+  S.isAdmin  = user?.uid === ADMIN_UID;
+  S.isSeller = user && !S.isAdmin;
+
+  if (user && !S.isAdmin) {
+    // Check if seller is active in Firestore
+    const doc = await db.collection('users').doc(user.uid).get();
+    if (doc.exists && doc.data().active === false) {
+      await auth.signOut();
+      showToast('Tu cuenta está desactivada. Contacta al administrador.', 'error');
+      return;
+    }
+  }
+
+  const loginBtn  = document.getElementById('navLoginBtn');
+  const userArea  = document.getElementById('navUserArea');
+  const modeTag   = document.getElementById('modeTag');
+
+  if (user) {
+    loginBtn.classList.add('hidden');
+    userArea.classList.remove('hidden');
+    document.getElementById('navUserName').textContent = user.displayName || user.email;
+    if (S.isAdmin) {
+      modeTag.textContent='🔐 Admin';
+      modeTag.className='text-xs bg-yellow-400 text-yellow-900 font-bold px-2.5 py-0.5 rounded-full';
+      openAdmin();
+    } else {
+      modeTag.textContent='💼 Modo Venta';
+      modeTag.className='text-xs bg-emerald-400 text-emerald-900 font-bold px-2.5 py-0.5 rounded-full';
+      document.getElementById('cartPanel').classList.remove('hidden');
+      document.getElementById('addToCartArea').classList.remove('hidden');
+    }
+  } else {
+    loginBtn.classList.remove('hidden');
+    userArea.classList.add('hidden');
+    modeTag.textContent='Consulta de Precios';
+    modeTag.className='text-xs bg-white/15 border border-white/20 px-2.5 py-0.5 rounded-full';
+    document.getElementById('cartPanel').classList.add('hidden');
+    document.getElementById('addToCartArea').classList.add('hidden');
+    document.getElementById('adminPanel').classList.add('hidden');
+  }
+});
+
+function showLoginModal(){
+  document.getElementById('loginModal').classList.remove('hidden');
+  setTimeout(()=>document.getElementById('loginEmail').focus(),100);
+}
+function hideLoginModal(){
+  document.getElementById('loginModal').classList.add('hidden');
+  document.getElementById('loginErr').classList.add('hidden');
+}
+async function doLogin(){
+  const email=document.getElementById('loginEmail').value.trim();
+  const pwd=document.getElementById('loginPwd').value;
+  const errEl=document.getElementById('loginErr');
+  const btn=document.getElementById('loginSubmitBtn');
+  errEl.classList.add('hidden');
+  if(!email||!pwd){errEl.textContent='Ingresa correo y contraseña';errEl.classList.remove('hidden');return;}
+  btn.disabled=true;btn.innerHTML='<i class="fa-solid fa-spinner fa-spin mr-1"></i>Entrando…';
+  try{
+    await auth.signInWithEmailAndPassword(email,pwd);
+    hideLoginModal();
+    document.getElementById('loginPwd').value='';
+    showToast('¡Sesión iniciada!','success');
+  }catch(e){
+    const m={'auth/invalid-credential':'Correo o contraseña incorrectos','auth/wrong-password':'Correo o contraseña incorrectos','auth/user-not-found':'Usuario no encontrado','auth/too-many-requests':'Demasiados intentos, espera un momento'};
+    errEl.textContent=m[e.code]||'Error al iniciar sesión';errEl.classList.remove('hidden');
+  }finally{btn.disabled=false;btn.innerHTML='<i class="fa-solid fa-sign-in-alt mr-1.5"></i>Entrar';}
+}
+async function logout(){await auth.signOut();clearCart();showToast('Sesión cerrada','info');}
+
+/* ══════════════════════════════════════
+   PRODUCT SEARCH
+══════════════════════════════════════ */
+async function doSearch(query){
+  query=(query||document.getElementById('searchInput').value).trim();
+  if(!query)return;
+  g('stateWelcome').classList.add('hidden');
+  g('stateProduct').classList.add('hidden');
+  g('stateNotFound').classList.add('hidden');
+  try{
+    let product=null;
+    const byBarcode=await db.collection('products').doc(query).get();
+    if(byBarcode.exists&&byBarcode.data().active!==false){
+      product={barcode:byBarcode.id,...byBarcode.data()};
+    }
+    if(!product){
+      const snap=await db.collection('products').where('active','==',true).orderBy('name').startAt(query).endAt(query+'\uf8ff').limit(1).get();
+      if(!snap.empty)product={barcode:snap.docs[0].id,...snap.docs[0].data()};
+    }
+    product?showProduct(product):showNotFound(query);
+  }catch(e){console.error(e);showToast('Error al buscar producto','error');}
+}
+
+function showProduct(p){
+  S.currentProduct=p;
+  g('pdBarcode').textContent='Cód: '+p.barcode;
+  g('pdName').textContent=p.name;
+  g('pdCategory').textContent=p.category||'Sin categoría';
+  g('pdPrice').textContent=fmt(p.price);
+  g('qtyInput').value=1;
+  g('stateProduct').classList.remove('hidden');
+  g('stateNotFound').classList.add('hidden');
+  g('stateWelcome').classList.add('hidden');
+}
+function showNotFound(code){
+  g('notFoundCode').textContent='Código: '+code;
+  g('stateNotFound').classList.remove('hidden');
+  g('stateProduct').classList.add('hidden');
+  g('stateWelcome').classList.add('hidden');
+  const addBtn=g('addFromScanBtn');
+  if(S.isAdmin){addBtn.classList.remove('hidden');window._pendingBarcode=code;}
+  else addBtn.classList.add('hidden');
+}
+
+/* ══════════════════════════════════════
+   CART
+══════════════════════════════════════ */
+function addToCart(){
+  if(!S.currentProduct)return;
+  const qty=parseInt(g('qtyInput').value)||1;
+  const p=S.currentProduct;
+  const ex=S.cart.find(i=>i.barcode===p.barcode);
+  if(ex){ex.quantity+=qty;ex.subtotal=ex.price*ex.quantity;}
+  else S.cart.push({barcode:p.barcode,name:p.name,price:p.price,quantity:qty,subtotal:p.price*qty});
+  renderCart();
+  showToast(p.name+' agregado','success');
+  g('qtyInput').value=1;
+}
+function removeCartItem(b){S.cart=S.cart.filter(i=>i.barcode!==b);renderCart();}
+function changeCartQty(b,d){const i=S.cart.find(i=>i.barcode===b);if(i){i.quantity=Math.max(1,i.quantity+d);i.subtotal=i.price*i.quantity;renderCart();}}
+function clearCart(){S.cart=[];renderCart();}
+function changeQty(d){const el=g('qtyInput');el.value=Math.max(1,(parseInt(el.value)||1)+d);}
+
+function renderCart(){
+  const total=S.cart.reduce((s,i)=>s+i.subtotal,0);
+  const count=S.cart.reduce((s,i)=>s+i.quantity,0);
+  g('cartBadge').textContent=count+' item'+(count!==1?'s':'');
+  g('cartSubtotal').textContent=fmt(total);
+  g('cartTotal').textContent=fmt(total);
+  g('checkoutBtn').disabled=!S.cart.length;
+  const list=g('cartList');
+  const empty=g('cartEmpty');
+  if(!S.cart.length){list.innerHTML='';list.appendChild(empty);empty.classList.remove('hidden');return;}
+  empty.classList.add('hidden');
+  list.innerHTML=S.cart.map(it=>`
+    <div class="bg-white rounded-xl p-2.5 border border-slate-100">
+      <div class="flex justify-between items-start mb-1">
+        <p class="text-xs font-semibold text-slate-800 flex-1 pr-2 leading-tight">${esc(it.name)}</p>
+        <button onclick="removeCartItem('${it.barcode}')" class="text-red-300 hover:text-red-500 text-xs"><i class="fa-solid fa-times"></i></button>
+      </div>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-1">
+          <button onclick="changeCartQty('${it.barcode}',-1)" class="w-5 h-5 bg-slate-100 hover:bg-slate-200 rounded-full text-xs font-bold">−</button>
+          <span class="text-xs font-bold w-5 text-center">${it.quantity}</span>
+          <button onclick="changeCartQty('${it.barcode}',1)" class="w-5 h-5 bg-slate-100 hover:bg-slate-200 rounded-full text-xs font-bold">+</button>
+        </div>
+        <p class="text-sm font-black text-indigo-700">${fmt(it.subtotal)}</p>
+      </div>
+    </div>`).join('');
+}
+
+/* ══════════════════════════════════════
+   SCANNER
+══════════════════════════════════════ */
+async function openScanModal(){
+  g('scanModal').classList.remove('hidden');
+  await delay(120);
+  startSc('scanReader','sc',async code=>{await closeScanModal();g('searchInput').value=code;await doSearch(code);});
+}
+async function closeScanModal(){await stopSc('sc');g('scanModal').classList.add('hidden');}
+
+function startSc(containerId,instKey,onSuccess){
+  if(S[instKey]){try{S[instKey].stop();}catch(e){}}
+  const fmts=[Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8,
+    Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,
+    Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.UPC_E,Html5QrcodeSupportedFormats.QR_CODE];
+  const sc=new Html5Qrcode(containerId);
+  S[instKey]=sc;
+  sc.start({facingMode:'environment'},{fps:10,qrbox:{width:260,height:110},formatsToSupport:fmts},
+    code=>{const now=Date.now();if(now-S.lastScanTs<2000)return;S.lastScanTs=now;onSuccess(code);}
+  ).catch(()=>showToast('Error al acceder a la cámara','error'));
+}
+async function stopSc(instKey){
+  try{if(S[instKey]&&S[instKey].isScanning)await S[instKey].stop();}catch(e){}
+  S[instKey]=null;
+}
+
+/* ══════════════════════════════════════
+   TERMINAL SYNC
+══════════════════════════════════════ */
+function initTerminal(){
+  let tid=localStorage.getItem('posTid');
+  if(!tid){tid='T'+Math.random().toString(36).substr(2,7).toUpperCase();localStorage.setItem('posTid',tid);}
+  S.terminalId=tid;
+  g('terminalIdEl').textContent=tid;
+  try{
+    const qrEl=g('terminalQRCode');qrEl.innerHTML='';
+    new QRCode(qrEl,{text:scanUrl(tid),width:80,height:80,colorDark:'#1e293b'});
+  }catch(e){}
+  db.collection('terminals').doc(tid).set({active:true,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+  let lastTs=0;
+  S.termUnsub=db.collection('terminals').doc(tid).onSnapshot(snap=>{
+    const d=snap.data();if(!d?.lastScan)return;
+    const ts=d.lastScan.timestamp?.toMillis?.()??0;
+    if(ts<=lastTs)return;lastTs=ts;
+    const code=d.lastScan.barcode;
+    g('syncDot').className='inline-block w-2 h-2 rounded-full dot-on';
+    g('syncText').textContent='Escaneo remoto';
+    setTimeout(()=>{g('syncDot').className='inline-block w-2 h-2 rounded-full dot-off';g('syncText').textContent='Sin escáner remoto';},3000);
+    g('searchInput').value=code;
+    doSearch(code);
+    showToast('📱 Escaneado: '+code,'info');
+  });
+}
+
+async function pushToTerminal(barcode,tid){
+  const data={lastScan:{barcode,timestamp:firebase.firestore.FieldValue.serverTimestamp()}};
+  try{await db.collection('terminals').doc(tid).update(data);}
+  catch(e){await db.collection('terminals').doc(tid).set({...data,active:true});}
+}
+
+function scanUrl(tid){return `${location.origin}${location.pathname}?scan=${tid}`;}
+
+function copyScanLink(){
+  const url=scanUrl(S.terminalId);
+  if(navigator.clipboard)navigator.clipboard.writeText(url).then(()=>showToast('Enlace copiado!','success'));
+  else prompt('Copia este enlace:',url);
+}
+
+function toggleTermCard(){
+  const body=g('termCardBody');const ch=g('termChevron');
+  const open=!body.classList.contains('hidden');
+  body.classList.toggle('hidden',open);
+  ch.style.transform=open?'rotate(-90deg)':'rotate(0deg)';
+}
+
+function checkPhoneMode(){
+  const params=new URLSearchParams(location.search);
+  const target=params.get('scan');
+  if(!target)return;
+  window._phoneMode=true;window._targetTerminal=target;
+  g('phoneBanner').classList.remove('hidden');
+  g('phoneTargetId').textContent=target;
+  g('terminalCard').classList.add('hidden');
+  g('stateWelcome').classList.add('hidden');
+  delay(400).then(()=>{
+    const wrap=document.createElement('div');
+    wrap.className='rounded-xl overflow-hidden bg-black';wrap.style.height='320px';
+    const inner=document.createElement('div');inner.id='phoneScanReader';inner.style.cssText='width:100%;height:100%;';
+    wrap.appendChild(inner);
+    document.querySelector('.flex-1.overflow-y-auto.p-3.space-y-3').appendChild(wrap);
+    startSc('phoneScanReader','phoneSc',async code=>{
+      await pushToTerminal(code,target);
+      showToast('✅ Enviado: '+code,'success');
+      doSearch(code);
+    });
+  });
+}
+
+/* ══════════════════════════════════════
+   PAYMENT
+══════════════════════════════════════ */
+function showPaymentModal(){
+  if(!S.cart.length)return;
+  const total=S.cart.reduce((s,i)=>s+i.subtotal,0);
+  g('payItemsSummary').innerHTML=S.cart.map(it=>`<div class="flex justify-between"><span class="text-slate-600">${esc(it.name)} x${it.quantity}</span><span class="font-semibold">${fmt(it.subtotal)}</span></div>`).join('')
+    +`<div class="border-t border-slate-200 mt-1 pt-1 flex justify-between font-bold"><span>Total</span><span>${fmt(total)}</span></div>`;
+  g('payTotal').textContent=fmt(total);
+  g('cashInput').value='';g('changeDisplay').textContent='$0.00';
+  S.payMethod='cash';selectPayMethod('cash');
+  g('payModal').classList.remove('hidden');
+  setTimeout(()=>g('cashInput').focus(),100);
+}
+function hidePayModal(){g('payModal').classList.add('hidden');}
+function selectPayMethod(m){
+  S.payMethod=m;
+  const cc='border-2 border-emerald-500 bg-emerald-50 text-emerald-700 py-3 rounded-xl font-semibold text-sm';
+  const ci='border-2 border-slate-200 bg-slate-50 text-slate-500 py-3 rounded-xl font-semibold text-sm';
+  const bc='border-2 border-blue-500 bg-blue-50 text-blue-700 py-3 rounded-xl font-semibold text-sm';
+  g('payBtnCash').className=m==='cash'?cc:ci;
+  g('payBtnCard').className=m==='card'?bc:ci;
+  g('cashArea').classList.toggle('hidden',m!=='cash');
+}
+function calcChange(){
+  const total=S.cart.reduce((s,i)=>s+i.subtotal,0);
+  const paid=parseFloat(g('cashInput').value)||0;
+  const change=Math.max(0,paid-total);
+  g('changeDisplay').textContent=fmt(change);
+  g('changeDisplay').className=paid>=total?'text-xl font-black text-emerald-600':'text-xl font-black text-red-500';
+}
+async function processPayment(){
+  const total=S.cart.reduce((s,i)=>s+i.subtotal,0);
+  if(S.payMethod==='cash'){const paid=parseFloat(g('cashInput').value)||0;if(paid<total){showToast('Monto insuficiente','error');return;}}
+  const btn=g('processBtn');
+  btn.disabled=true;btn.innerHTML='<i class="fa-solid fa-spinner fa-spin mr-2"></i>Procesando…';
+  try{
+    const now=new Date();
+    const paid=S.payMethod==='cash'?(parseFloat(g('cashInput').value)||total):total;
+    await db.collection('sales').add({
+      items:[...S.cart],total,payMethod:S.payMethod,amountPaid:paid,change:Math.max(0,paid-total),
+      sellerId:S.user.uid,sellerName:S.user.displayName||S.user.email,
+      timestamp:firebase.firestore.FieldValue.serverTimestamp(),
+      date:now.toISOString().split('T')[0],year:now.getFullYear(),month:now.getMonth()+1
+    });
+    const batch=db.batch();
+    S.cart.forEach(it=>batch.update(db.collection('products').doc(it.barcode),{salesCount:firebase.firestore.FieldValue.increment(it.quantity)}));
+    batch.commit().catch(()=>{});
+    hidePayModal();clearCart();
+    g('stateProduct').classList.add('hidden');g('stateWelcome').classList.remove('hidden');
+    g('searchInput').value='';
+    showToast('¡Venta de '+fmt(total)+' registrada! ✅','success');
+  }catch(e){console.error(e);showToast('Error al registrar la venta','error');}
+  finally{btn.disabled=false;btn.innerHTML='<i class="fa-solid fa-check mr-2"></i>Confirmar Pago';}
+}
+
+/* ══════════════════════════════════════
+   ADMIN PANEL
+══════════════════════════════════════ */
+function openAdmin(){
+  g('adminPanel').classList.remove('hidden');
+  g('adminEmailLabel').textContent=S.user?.email||'';
+  switchTab('metrics');
+}
+function closeAdmin(){g('adminPanel').classList.add('hidden');}
+function switchTab(tab){
+  document.querySelectorAll('.admin-tab-btn').forEach(b=>b.classList.remove('active'));
+  g('tab-'+tab)?.classList.add('active');
+  document.querySelectorAll('.admin-content').forEach(el=>el.classList.add('hidden'));
+  g('admin-'+tab)?.classList.remove('hidden');
+  if(tab==='metrics')loadMetrics('day');
+  if(tab==='products')loadProducts();
+  if(tab==='sellers')loadSellers();
+  if(tab==='history')loadHistory();
+}
+
+/* ── METRICS ── */
+async function loadMetrics(period){
+  document.querySelectorAll('.period-btn').forEach(b=>{
+    b.className=b.className.replace(' active','');
+    if(b.dataset.period===period)b.classList.add('active');
+  });
+  const labels={day:'Hoy',week:'Esta semana',month:'Este mes',year:'Este año'};
+  g('kpiPeriodLabel').textContent=labels[period];
+  ['kpiTotal','kpiCash','kpiTx','kpiAvg'].forEach(id=>g(id).textContent='…');
+  const now=new Date();
+  const starts={day:new Date(now.getFullYear(),now.getMonth(),now.getDate()),
+    week:new Date(now-7*864e5),month:new Date(now.getFullYear(),now.getMonth(),1),year:new Date(now.getFullYear(),0,1)};
+  try{
+    const snap=await db.collection('sales').where('timestamp','>=',firebase.firestore.Timestamp.fromDate(starts[period])).get();
+    const sales=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const totalSales=sales.reduce((s,x)=>s+(x.total||0),0);
+    const totalCash=sales.filter(x=>x.payMethod==='cash').reduce((s,x)=>s+(x.total||0),0);
+    const txCount=sales.length;
+    g('kpiTotal').textContent=fmt(totalSales);g('kpiCash').textContent=fmt(totalCash);
+    g('kpiTx').textContent=txCount;g('kpiAvg').textContent=fmt(txCount?totalSales/txCount:0);
+    const byDate={};sales.forEach(s=>{const d=s.timestamp?.toDate?.()?.toISOString?.()?.split('T')[0]||s.date;if(d)byDate[d]=(byDate[d]||0)+(s.total||0);});
+    const bySeller={};sales.forEach(s=>{const k=s.sellerName||'Desconocido';bySeller[k]=(bySeller[k]||0)+(s.total||0);});
+    const byProd={};sales.forEach(s=>(s.items||[]).forEach(it=>{if(!byProd[it.barcode])byProd[it.barcode]={name:it.name,qty:0,rev:0};byProd[it.barcode].qty+=it.quantity||0;byProd[it.barcode].rev+=it.subtotal||0;}));
+    renderLineChart(byDate);renderBarChart(bySeller);
+    const prodList=Object.values(byProd).sort((a,b)=>b.qty-a.qty);
+    renderProdRank('topProdsEl',prodList.slice(0,8),true);
+    renderProdRank('botProdsEl',[...prodList].reverse().slice(0,8),false);
+  }catch(e){console.error(e);showToast('Error al cargar métricas','error');}
+}
+
+function renderLineChart(byDate){
+  const ctx=g('chartSales').getContext('2d');
+  if(S.charts.line)S.charts.line.destroy();
+  const labels=Object.keys(byDate).sort();
+  S.charts.line=new Chart(ctx,{type:'line',
+    data:{labels:labels.map(l=>{const d=new Date(l+'T00:00:00');return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'});}),
+      datasets:[{label:'Ventas',data:labels.map(l=>byDate[l]),borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,.1)',tension:.4,fill:true,pointRadius:3}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{callback:v=>'$'+v.toLocaleString('es-MX')}}}}});
+}
+function renderBarChart(bySeller){
+  const ctx=g('chartSellers').getContext('2d');
+  if(S.charts.bar)S.charts.bar.destroy();
+  const names=Object.keys(bySeller),values=names.map(n=>bySeller[n]);
+  const colors=['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#3b82f6'];
+  S.charts.bar=new Chart(ctx,{type:'bar',
+    data:{labels:names,datasets:[{data:values,backgroundColor:names.map((_,i)=>colors[i%colors.length]),borderRadius:6}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{callback:v=>'$'+v.toLocaleString('es-MX')}}}}});
+}
+function renderProdRank(elId,list,isTop){
+  const el=g(elId);
+  if(!list.length){el.innerHTML='<p class="text-slate-400 text-xs text-center py-4">Sin datos</p>';return;}
+  const max=list[0]?.qty||1;
+  el.innerHTML=list.map((p,i)=>`
+    <div class="flex items-center gap-2 py-1">
+      <span class="text-xs text-slate-300 w-4">${i+1}</span>
+      <div class="flex-1 min-w-0">
+        <p class="text-xs font-semibold text-slate-800 truncate">${esc(p.name)}</p>
+        <div class="flex items-center gap-1 mt-0.5">
+          <div class="flex-1 bg-slate-100 rounded-full h-1">
+            <div class="h-1 rounded-full ${isTop?'bg-indigo-500':'bg-orange-400'}" style="width:${Math.max(6,(p.qty/max)*100)}%"></div>
+          </div>
+          <span class="text-xs text-slate-400">${p.qty}</span>
+        </div>
+      </div>
+      <span class="text-xs font-bold text-slate-700">${fmt(p.rev)}</span>
+    </div>`).join('');
+}
+
+/* ── PRODUCTS (admin) ── */
+async function loadProducts(){
+  const tbody=g('prodTableBody');
+  tbody.innerHTML='<tr><td colspan="6" class="py-10 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Cargando…</td></tr>';
+  try{
+    const snap=await db.collection('products').orderBy('name').get();
+    S.allProducts=snap.docs.map(d=>({barcode:d.id,...d.data()}));
+    renderProdTable(S.allProducts);
+  }catch(e){tbody.innerHTML='<tr><td colspan="6" class="py-10 text-center text-red-400">Error al cargar</td></tr>';}
+}
+function filterProdTable(){
+  const q=g('prodFilter').value.toLowerCase();
+  renderProdTable(S.allProducts.filter(p=>(p.name||'').toLowerCase().includes(q)||(p.barcode||'').toLowerCase().includes(q)||(p.category||'').toLowerCase().includes(q)));
+}
+function renderProdTable(list){
+  const tbody=g('prodTableBody');
+  if(!list.length){tbody.innerHTML='<tr><td colspan="6" class="py-10 text-center text-slate-400">Sin resultados</td></tr>';return;}
+  tbody.innerHTML=list.map(p=>`
+    <tr class="hover:bg-slate-50 transition">
+      <td class="px-4 py-3"><code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">${esc(p.barcode)}</code></td>
+      <td class="px-4 py-3 font-semibold text-slate-800 text-sm">${esc(p.name)}</td>
+      <td class="px-4 py-3 text-slate-500 text-xs hidden md:table-cell">${esc(p.category||'-')}</td>
+      <td class="px-4 py-3 text-right font-bold text-indigo-700">${fmt(p.price)}</td>
+      <td class="px-4 py-3 text-center hidden md:table-cell">
+        <span class="text-xs px-2 py-0.5 rounded-full font-medium ${p.active!==false?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-600'}">
+          ${p.active!==false?'Activo':'Inactivo'}</span>
+      </td>
+      <td class="px-4 py-3 text-right space-x-2">
+        <button onclick="editProduct('${p.barcode}')" class="text-indigo-500 hover:text-indigo-700 text-sm"><i class="fa-solid fa-pen-to-square"></i></button>
+        <button onclick="toggleProduct('${p.barcode}',${p.active!==false})" class="text-sm ${p.active!==false?'text-red-400 hover:text-red-600':'text-emerald-500 hover:text-emerald-700'}">
+          <i class="fa-solid fa-${p.active!==false?'ban':'check'}"></i></button>
+      </td>
+    </tr>`).join('');
+}
+function showProductModal(fromScan=false){
+  g('productModalTitle').textContent='Agregar Producto';
+  g('pf_barcode').value=fromScan&&window._pendingBarcode?window._pendingBarcode:'';
+  g('pf_barcode').readOnly=false;
+  g('pf_name').value='';g('pf_price').value='';g('pf_stock').value='';g('pf_category').value='General';
+  S.editingBarcode=null;
+  g('productModal').classList.remove('hidden');
+}
+function editProduct(barcode){
+  const p=S.allProducts.find(x=>x.barcode===barcode);if(!p)return;
+  g('productModalTitle').textContent='Editar Producto';
+  g('pf_barcode').value=p.barcode;g('pf_barcode').readOnly=true;
+  g('pf_name').value=p.name;g('pf_price').value=p.price;g('pf_stock').value=p.stock||'';g('pf_category').value=p.category||'General';
+  S.editingBarcode=barcode;g('productModal').classList.remove('hidden');
+}
+async function saveProduct(){
+  const barcode=g('pf_barcode').value.trim();const name=g('pf_name').value.trim();
+  const price=parseFloat(g('pf_price').value);const stock=parseInt(g('pf_stock').value)||0;const category=g('pf_category').value;
+  if(!name||isNaN(price)||price<0){showToast('Nombre y precio son requeridos','error');return;}
+  const data={name,price,stock,category,active:true,updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+  try{
+    if(barcode){if(!S.editingBarcode)data.createdAt=firebase.firestore.FieldValue.serverTimestamp();await db.collection('products').doc(barcode).set(data,{merge:true});}
+    else{data.createdAt=firebase.firestore.FieldValue.serverTimestamp();await db.collection('products').add(data);}
+    hideProductModal();loadProducts();showToast('Producto '+(S.editingBarcode?'actualizado':'agregado')+' ✅','success');
+  }catch(e){console.error(e);showToast('Error al guardar: '+e.message,'error');}
+}
+async function toggleProduct(barcode,active){
+  await db.collection('products').doc(barcode).update({active:!active});loadProducts();
+  showToast('Producto '+((!active)?'activado':'desactivado'),'success');
+}
+function hideProductModal(){
+  stopSc('pfSc');g('pf_scanArea').classList.add('hidden');
+  g('productModal').classList.add('hidden');g('pf_barcode').readOnly=false;
+}
+function startProductScan(){
+  g('pf_scanArea').classList.remove('hidden');
+  startSc('pf_scanReader','pfSc',code=>{
+    g('pf_barcode').value=code;stopSc('pfSc');g('pf_scanArea').classList.add('hidden');showToast('Código: '+code,'success');
+  });
+}
+
+/* ── SELLERS (admin) ──
+   Usamos Firebase Auth REST API para crear usuarios
+   sin que el admin pierda su sesión                 */
+async function loadSellers(){
+  g('sellersGrid').innerHTML='<div class="col-span-3 py-10 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Cargando…</div>';
+  try{
+    const snap=await db.collection('users').where('role','==','seller').get();
+    S.allSellers=snap.docs.map(d=>({uid:d.id,...d.data()}));
+    renderSellersGrid();
+    const sel=g('histSellerFilter');
+    sel.innerHTML='<option value="">Todos los vendedores</option>';
+    S.allSellers.forEach(s=>sel.innerHTML+=`<option value="${s.uid}">${esc(s.name)}</option>`);
+  }catch(e){g('sellersGrid').innerHTML='<div class="col-span-3 py-10 text-center text-red-400">Error al cargar</div>';}
+}
+function renderSellersGrid(){
+  const grid=g('sellersGrid');
+  if(!S.allSellers.length){grid.innerHTML='<div class="col-span-3 py-12 text-center"><p class="text-slate-400 text-sm">No hay vendedores</p><button onclick="showSellerModal()" class="mt-2 text-indigo-600 text-sm font-medium">+ Agregar primero</button></div>';return;}
+  grid.innerHTML=S.allSellers.map(s=>`
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+      <div class="flex items-start justify-between mb-3">
+        <div class="w-11 h-11 rounded-full bg-indigo-100 flex items-center justify-center">
+          <span class="font-black text-indigo-600 text-lg">${(s.name||'V')[0].toUpperCase()}</span>
+        </div>
+        <span class="text-xs px-2 py-0.5 rounded-full font-semibold ${s.active?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-500'}">
+          ${s.active?'Activo':'Inactivo'}</span>
+      </div>
+      <p class="font-bold text-slate-800 text-sm">${esc(s.name)}</p>
+      <p class="text-slate-400 text-xs mt-0.5 mb-3">${esc(s.email)}</p>
+      <button onclick="toggleSeller('${s.uid}',${s.active})"
+        class="w-full text-xs py-2 rounded-lg font-semibold transition ${s.active?'bg-red-50 text-red-600 hover:bg-red-100':'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}">
+        <i class="fa-solid fa-${s.active?'user-slash':'user-check'} mr-1"></i>${s.active?'Dar de baja':'Reactivar'}
+      </button>
+    </div>`).join('');
+}
+function showSellerModal(){
+  ['sf_name','sf_email','sf_password'].forEach(id=>g(id).value='');
+  g('sellerErr').classList.add('hidden');g('sellerModal').classList.remove('hidden');
+}
+function hideSellerModal(){g('sellerModal').classList.add('hidden');}
+async function saveSeller(){
+  const name=g('sf_name').value.trim();const email=g('sf_email').value.trim();const pwd=g('sf_password').value;
+  const errEl=g('sellerErr');const btn=g('saveSellerBtn');
+  errEl.classList.add('hidden');
+  if(!name||!email||!pwd){errEl.textContent='Todos los campos son requeridos';errEl.classList.remove('hidden');return;}
+  if(pwd.length<6){errEl.textContent='Contraseña mínimo 6 caracteres';errEl.classList.remove('hidden');return;}
+  btn.disabled=true;btn.innerHTML='<i class="fa-solid fa-spinner fa-spin mr-1"></i>Creando…';
+  try{
+    /* Usamos Firebase Auth REST API — el admin no pierde su sesión */
+    const signUpRes=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${API_KEY}`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email,password:pwd,returnSecureToken:true})
+    });
+    const signUpData=await signUpRes.json();
+    if(signUpData.error)throw new Error(signUpData.error.message);
+    const uid=signUpData.localId;const idToken=signUpData.idToken;
+
+    /* Actualizar displayName */
+    await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${API_KEY}`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({idToken,displayName:name,returnSecureToken:false})
+    });
+
+    /* Guardar en Firestore */
+    await db.collection('users').doc(uid).set({
+      name,email,role:'seller',active:true,createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    hideSellerModal();loadSellers();showToast('Vendedor '+name+' creado ✅','success');
+  }catch(e){
+    const msgs={'EMAIL_EXISTS':'Este correo ya está registrado','WEAK_PASSWORD : Password should be at least 6 characters':'Contraseña muy débil','INVALID_EMAIL':'Correo inválido'};
+    errEl.textContent=msgs[e.message]||e.message;errEl.classList.remove('hidden');
+  }finally{btn.disabled=false;btn.innerHTML='<i class="fa-solid fa-user-plus mr-1"></i>Crear';}
+}
+async function toggleSeller(uid,active){
+  await db.collection('users').doc(uid).update({active:!active,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+  showToast('Vendedor '+((!active)?'reactivado':'dado de baja'),'success');
+  loadSellers();
+}
+
+/* ── HISTORY ── */
+async function loadHistory(){
+  const tbody=g('histTableBody');
+  tbody.innerHTML='<tr><td colspan="6" class="py-10 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Cargando…</td></tr>';
+  const sellerId=g('histSellerFilter').value;
+  const startDate=g('histStart').value;const endDate=g('histEnd').value;
+  try{
+    let q=sellerId?db.collection('sales').where('sellerId','==',sellerId):db.collection('sales').orderBy('timestamp','desc');
+    const snap=await q.limit(200).get();
+    let sales=snap.docs.map(d=>({id:d.id,...d.data()}));
+    if(startDate){const s=new Date(startDate+'T00:00:00');sales=sales.filter(x=>x.timestamp?.toDate?.()>=s);}
+    if(endDate){const e=new Date(endDate+'T23:59:59');sales=sales.filter(x=>x.timestamp?.toDate?.()<=e);}
+    sales.sort((a,b)=>(b.timestamp?.toMillis?.()??0)-(a.timestamp?.toMillis?.()??0));
+    S.histSales=sales;
+    if(!sales.length){tbody.innerHTML='<tr><td colspan="6" class="py-10 text-center text-slate-400">Sin ventas en el período</td></tr>';return;}
+    tbody.innerHTML=sales.map(s=>{
+      const d=s.timestamp?.toDate?.();
+      const ds=d?d.toLocaleString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'-';
+      const items=(s.items||[]).reduce((t,i)=>t+i.quantity,0);
+      return`<tr class="hover:bg-slate-50 transition">
+        <td class="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">${ds}</td>
+        <td class="px-4 py-3 text-sm text-slate-800 hidden sm:table-cell">${esc(s.sellerName||'-')}</td>
+        <td class="px-4 py-3 text-center text-sm">${items}</td>
+        <td class="px-4 py-3 text-right font-bold text-indigo-700">${fmt(s.total)}</td>
+        <td class="px-4 py-3 text-center hidden md:table-cell">
+          <span class="text-xs px-2 py-0.5 rounded-full ${s.payMethod==='cash'?'bg-emerald-100 text-emerald-700':'bg-blue-100 text-blue-700'}">
+            ${s.payMethod==='cash'?'💵 Efectivo':'💳 Tarjeta'}</span>
+        </td>
+        <td class="px-4 py-3 text-right">
+          <button onclick="showSaleDetail('${s.id}')" class="text-indigo-500 hover:text-indigo-700 text-sm"><i class="fa-solid fa-eye"></i></button>
+        </td>
+      </tr>`;}).join('');
+  }catch(e){console.error(e);tbody.innerHTML='<tr><td colspan="6" class="py-10 text-center text-red-400">Error al cargar</td></tr>';}
+}
+
+async function showSaleDetail(id){
+  const doc=await db.collection('sales').doc(id).get();const s={id:doc.id,...doc.data()};
+  const d=s.timestamp?.toDate?.();const ds=d?d.toLocaleString('es-MX'):'-';
+  g('saleDetailContent').innerHTML=`
+    <div class="grid grid-cols-2 gap-3 text-sm mb-4">
+      <div><p class="text-slate-400 text-xs">Fecha</p><p class="font-semibold">${ds}</p></div>
+      <div><p class="text-slate-400 text-xs">Vendedor</p><p class="font-semibold">${esc(s.sellerName||'-')}</p></div>
+      <div><p class="text-slate-400 text-xs">Pago</p><p class="font-semibold">${s.payMethod==='cash'?'💵 Efectivo':'💳 Tarjeta'}</p></div>
+      ${s.payMethod==='cash'?`<div><p class="text-slate-400 text-xs">Cambio</p><p class="font-semibold">${fmt(s.change||0)}</p></div>`:''}
+    </div>
+    <div class="bg-slate-50 rounded-xl overflow-hidden mb-4">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-100"><tr>
+          <th class="text-left px-3 py-2 text-slate-500 font-semibold">Producto</th>
+          <th class="text-center px-3 py-2 text-slate-500 font-semibold">Qty</th>
+          <th class="text-right px-3 py-2 text-slate-500 font-semibold">P.U.</th>
+          <th class="text-right px-3 py-2 text-slate-500 font-semibold">Subtotal</th>
+        </tr></thead>
+        <tbody class="divide-y divide-slate-100">
+          ${(s.items||[]).map(it=>`<tr>
+            <td class="px-3 py-2">${esc(it.name)}</td>
+            <td class="px-3 py-2 text-center">${it.quantity}</td>
+            <td class="px-3 py-2 text-right">${fmt(it.price)}</td>
+            <td class="px-3 py-2 text-right font-semibold">${fmt(it.subtotal)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="flex justify-between items-center font-black text-lg px-1">
+      <span>Total</span><span class="text-indigo-700">${fmt(s.total)}</span>
+    </div>`;
+  g('saleDetailModal').classList.remove('hidden');
+}
+function hideSaleDetail(){g('saleDetailModal').classList.add('hidden');}
+
+/* ── CSV Export ── */
+function exportCSV(){
+  if(!S.histSales.length){showToast('Carga el historial primero','warning');return;}
+  const header=['ID','Fecha','Vendedor','Total','Método de pago','Items'];
+  const rows=S.histSales.map(s=>[
+    s.id,
+    s.timestamp?.toDate?.()?.toLocaleString('es-MX')||'',
+    s.sellerName||'',
+    s.total||0,
+    s.payMethod==='cash'?'Efectivo':'Tarjeta',
+    (s.items||[]).map(i=>`${i.name}(x${i.quantity})`).join('; ')
+  ]);
+  const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`ventas_${new Date().toISOString().split('T')[0]}.csv`;a.click();
+}
+
+/* ══════════════════════════════════════
+   UTILITIES
+══════════════════════════════════════ */
+const g=id=>document.getElementById(id);
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+const fmt=n=>new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(n||0);
+const esc=str=>String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+let _toastTimer;
+function showToast(msg,type='info'){
+  const toast=g('toast');const inner=g('toastInner');const icon=g('toastIcon');
+  g('toastMsg').textContent=msg;
+  const cfg={success:{cls:'fa-solid fa-circle-check text-emerald-500',bg:'bg-emerald-50 border-emerald-200'},
+    error:{cls:'fa-solid fa-circle-xmark text-red-500',bg:'bg-red-50 border-red-200'},
+    info:{cls:'fa-solid fa-circle-info text-blue-500',bg:'bg-blue-50 border-blue-200'},
+    warning:{cls:'fa-solid fa-triangle-exclamation text-yellow-500',bg:'bg-yellow-50 border-yellow-200'}};
+  const c=cfg[type]||cfg.info;
+  icon.className=c.cls+' text-lg w-5 text-center';
+  inner.className=`flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border min-w-[260px] ${c.bg}`;
+  toast.classList.add('show');
+  clearTimeout(_toastTimer);_toastTimer=setTimeout(()=>toast.classList.remove('show'),3500);
+}
+
+/* ══════════════════════════════════════
+   KEYBOARD SHORTCUTS
+══════════════════════════════════════ */
+document.addEventListener('keydown',e=>{
+  if(e.ctrlKey&&e.shiftKey&&e.key==='A'){e.preventDefault();S.isAdmin?openAdmin():showLoginModal();}
+  if(e.key==='Escape'){
+    hideLoginModal();closeScanModal();hidePayModal();hideProductModal();hideSellerModal();hideSaleDetail();
+  }
+});
+
+/* ══════════════════════════════════════
+   INIT
+══════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded',()=>{
+  const today=new Date().toISOString().split('T')[0];
+  const weekAgo=new Date(Date.now()-7*864e5).toISOString().split('T')[0];
+  g('histEnd').value=today;g('histStart').value=weekAgo;
+  initTerminal();
+  checkPhoneMode();
+});
+</script>
+</body>
+</html>
