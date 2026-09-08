@@ -1092,9 +1092,16 @@
     <div class="space-y-3">
       <input id="loginEmail" type="email" inputmode="email" autocomplete="email" placeholder="Correo electrónico"
         class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[48px]">
-      <input id="loginPwd" type="password" autocomplete="current-password" placeholder="Contraseña"
-        class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[48px]"
-        onkeydown="if(event.key==='Enter') doLogin()">
+      <div class="relative">
+        <input id="loginPwd" type="password" autocomplete="current-password" placeholder="Contraseña"
+          class="w-full border border-slate-200 rounded-xl pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[48px]"
+          onkeydown="if(event.key==='Enter') doLogin()">
+        <button type="button" tabindex="-1" onclick="togglePwd('loginPwd','loginPwdIcon')"
+          aria-label="Mostrar contraseña" title="Mostrar contraseña"
+          class="absolute right-1 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-slate-400 hover:text-indigo-600 active:text-indigo-700 rounded-lg transition">
+          <i id="loginPwdIcon" class="fa-solid fa-eye text-base"></i>
+        </button>
+      </div>
       <p id="loginErr" class="text-red-500 text-xs hidden px-1 bg-red-50 py-2 rounded-lg"></p>
       <button onclick="doLogin()" id="loginSubmitBtn"
         class="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white py-3 rounded-xl font-bold text-sm transition min-h-[48px]">
@@ -1843,8 +1850,7 @@ const ADMIN_UIDS = [
   'XNFA7Wr5pPfmv9Rhlb9xQQV8Vii1',
   'C7CYUrt0WEcCGuYuZits3FmI1CE2'
 ];
-/* Compatibilidad con código que aún use ADMIN_UID (admin principal) */
-const ADMIN_UID  = ADMIN_UIDS[0];
+const ADMIN_UID  = ADMIN_UIDS[0];   /* compatibilidad */
 const isAdminUid = uid => !!uid && ADMIN_UIDS.includes(uid);
 const isMobile  = () => window.innerWidth < 768;
 
@@ -2278,6 +2284,32 @@ function showCart(on){
   updateBranchTag();
 }
 
+/* ── Mostrar / ocultar contraseña (ojito) ── */
+function togglePwd(inputId, iconId){
+  const inp = g(inputId); if(!inp) return;
+  const show = inp.type === 'password';        // true = vamos a mostrarla
+  inp.type = show ? 'text' : 'password';
+  const ic = iconId ? g(iconId) : null;
+  if(ic){
+    ic.classList.toggle('fa-eye',      !show);
+    ic.classList.toggle('fa-eye-slash', show);
+    const btn = ic.closest('button');
+    if(btn){
+      const lbl = show ? 'Ocultar contraseña' : 'Mostrar contraseña';
+      btn.setAttribute('aria-label', lbl); btn.title = lbl;
+    }
+  }
+  /* Devuelve el foco al final del texto para poder seguir escribiendo */
+  inp.focus();
+  try{ const n = inp.value.length; inp.setSelectionRange(n, n); }catch(e){}
+}
+/* Vuelve el campo a estado oculto (al abrir/cerrar el modal) */
+function resetPwdVisibility(inputId, iconId){
+  const inp = g(inputId); if(!inp) return;
+  inp.type = 'password';
+  const ic = iconId ? g(iconId) : null;
+  if(ic){ ic.classList.add('fa-eye'); ic.classList.remove('fa-eye-slash'); }
+}
 function showLoginModal(){
   g('loginModal').classList.remove('hidden');
   setTimeout(()=>g('loginEmail').focus(),150);
@@ -2285,6 +2317,7 @@ function showLoginModal(){
 function hideLoginModal(){
   g('loginModal').classList.add('hidden');
   g('loginErr').classList.add('hidden');
+  resetPwdVisibility('loginPwd','loginPwdIcon');
 }
 async function doLogin(){
   const email=g('loginEmail').value.trim();
