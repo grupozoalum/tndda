@@ -2795,7 +2795,7 @@ const ESC = {
   CENTER:new Uint8Array([0x1B,0x61,0x01]),
   LEFT:new Uint8Array([0x1B,0x61,0x00]),
   BOLD_ON:new Uint8Array([0x1B,0x45,0x01]),
-  BOLD_OFF:new Uint8Array([0x1B,0x45,0x00]),
+  BOLD_OFF:new Uint8Array([0x1B,0x45,0x01]),  /* negritas SIEMPRE: nunca se apagan */
   DBL_ON:new Uint8Array([0x1B,0x47,0x01]),   // double-strike: mismo punto 2 veces
   DBL_OFF:new Uint8Array([0x1B,0x47,0x00]),
   BIG_ON:new Uint8Array([0x1D,0x21,0x11]),   // doble alto + doble ancho
@@ -2822,6 +2822,7 @@ async function applyPrinterSettings(){
   const parts = [ESC.INIT, heatCmd(cfg), codepageCmd(cfg.codepage)];
   if(cfg.useDC2) parts.push(new Uint8Array([0x12,0x23, ((Math.min(7,cfg.density+2))<<5) | 0x0A]));
   parts.push(cfg.doubleStrike ? ESC.DBL_ON : ESC.DBL_OFF);
+  parts.push(ESC.BOLD_ON);          // negritas en todo el ticket
   await writeToPrinter(...parts);
 }
 
