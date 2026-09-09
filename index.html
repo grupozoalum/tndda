@@ -2799,7 +2799,7 @@ const ESC = {
   DBL_ON:new Uint8Array([0x1B,0x47,0x01]),   // double-strike: mismo punto 2 veces
   DBL_OFF:new Uint8Array([0x1B,0x47,0x00]),
   BIG_ON:new Uint8Array([0x1D,0x21,0x11]),   // doble alto + doble ancho
-  BIG_OFF:new Uint8Array([0x1D,0x21,0x00]),
+  BIG_OFF:new Uint8Array([0x1D,0x21,0x11]),  /* tamaño grande siempre */
   CUT:new Uint8Array([0x1D,0x56,0x42,0x00]),
   FEED:new Uint8Array([0x0A,0x0A,0x0A]),
 };
@@ -2822,6 +2822,7 @@ async function applyPrinterSettings(){
   const parts = [ESC.INIT, heatCmd(cfg), codepageCmd(cfg.codepage)];
   if(cfg.useDC2) parts.push(new Uint8Array([0x12,0x23, ((Math.min(7,cfg.density+2))<<5) | 0x0A]));
   parts.push(cfg.doubleStrike ? ESC.DBL_ON : ESC.DBL_OFF);
+  parts.push(ESC.BOLD_ON, ESC.BIG_ON);   // todo el ticket como el TOTAL
   parts.push(ESC.BOLD_ON);          // negritas en todo el ticket
   await writeToPrinter(...parts);
 }
@@ -2867,9 +2868,10 @@ async function writeToPrinter(...chunks){
 }
 
 /* ── Formato a 32 columnas (ancho real de una POS-58 en fuente A) ── */
-function prnLine(ch='-'){ return ch.repeat(prnCfg().width)+'\n'; }
+const PRN_W = 16;   /* doble ancho: caben 16 caracteres, no 32 */
+function prnLine(ch='-'){ return ch.repeat(PRN_W)+'\n'; }
 function prnRow(left, right){
-  const w = prnCfg().width;
+  const w = PRN_W;
   left = String(left); right = String(right);
   const space = w - right.length;
   if(left.length > space-1) left = left.slice(0, Math.max(1,space-1));
