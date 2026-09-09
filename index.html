@@ -2794,15 +2794,28 @@ const ESC = {
   INIT:new Uint8Array([0x1B,0x40]),
   CENTER:new Uint8Array([0x1B,0x61,0x01]),
   LEFT:new Uint8Array([0x1B,0x61,0x00]),
-  BOLD_ON:new Uint8Array([0x1B,0x45,0x01]),
-  BOLD_OFF:new Uint8Array([0x1B,0x45,0x01]),  /* negritas SIEMPRE: nunca se apagan */
-  DBL_ON:new Uint8Array([0x1B,0x47,0x01]),   // double-strike: mismo punto 2 veces
-  DBL_OFF:new Uint8Array([0x1B,0x47,0x00]),
-  BIG_ON:new Uint8Array([0x1D,0x21,0x11]),   // doble alto + doble ancho
-  BIG_OFF:new Uint8Array([0x1D,0x21,0x11]),  /* tamaño grande siempre */
   CUT:new Uint8Array([0x1D,0x56,0x42,0x00]),
   FEED:new Uint8Array([0x0A,0x0A,0x0A]),
 };
+
+/* ── ESTILO DEL TEXTO ──────────────────────────────────────────────
+   Muchas POS-58 cancelan el modo de tamaño doble en cuanto reciben un
+   salto de línea. Por eso antes solo el TOTAL salía nítido: era la única
+   línea que tenía el comando justo antes. La solución es reafirmar el
+   estilo ANTES DE CADA LÍNEA, que es lo que hace writeToPrinter.
+     ESC ! 0x38 → negrita + doble alto + doble ancho
+     GS  ! 0x11 → doble alto + doble ancho (algunos clones solo respetan este)
+     ESC E 1    → negritas
+     ESC G n    → doble pasada (checkbox "Doble pasada")                    */
+let PRN_RAW = false;   // true = escribir sin estilo (solo la prueba de densidades)
+function prnStyleBytes(cfg){
+  return [
+    new Uint8Array([0x1B,0x21,0x38]),
+    new Uint8Array([0x1D,0x21,0x11]),
+    new Uint8Array([0x1B,0x45,0x01]),
+    new Uint8Array([0x1B,0x47, cfg.doubleStrike?1:0]),
+  ];
+}
 
 /* ESC 7 n1 n2 n3 — puntos máx. / tiempo de calor / intervalo.
    Es EL comando que arregla los tickets pálidos o borrosos en las POS-58. */
@@ -2817,13 +2830,11 @@ function codepageCmd(cp){
   return new Uint8Array([0x1B,0x74,n]);
 }
 async function applyPrinterSettings(){
+  PRN_RAW = false;
   if(!S.printer.connected) return;
   const cfg = prnCfg();
-  const parts = [ESC.INIT, heatCmd(cfg), codepageCmd(cfg.codepage)];
-  if(cfg.useDC2) parts.push(new Uint8Array([0x12,0x23, ((Math.min(7,cfg.density+2))<<5) | 0x0A]));
-  parts.push(cfg.doubleStrike ? ESC.DBL_ON : ESC.DBL_OFF);
-  parts.push(ESC.BOLD_ON, ESC.BIG_ON);   // todo el ticket como el TOTAL
-  parts.push(ESC.BOLD_ON);          // negritas en todo el ticket
+  const parts = [ESC.INIT, heatCmd(cfg), codepageCmd(cfg.codepage), ...prnStyleBytes(cfg)];
+  if(cfg.useDC2) parts.splice(3, 0, new Uint8Array([0x12,0x23, ((Math.min(7,cfg.density+2))<<5) | 0x0A]));
   await writeToPrinter(...parts);
 }
 
@@ -2849,7 +2860,7 @@ function encPrinter(str, cp){
   return new Uint8Array(out);
 }
 
-/* ── Escritura por bloques ──
+/* ── Escritura por bloques + estilo por línea ──
    Las POS-58 baratas tienen un búfer chico: si le mandas todo de golpe
    pierde bytes y el ticket sale cortado o "movido". */
 const PRN_CHUNK = 48, PRN_PAUSE = 12;
@@ -2857,49 +2868,75 @@ const sleep = ms => new Promise(r=>setTimeout(r,ms));
 async function writeToPrinter(...chunks){
   const w = S.printer.writer;
   if(!w) throw new Error('Impresora no conectada');
-  const cp = prnCfg().codepage;
+  const cfg = prnCfg();
+  const raw = async b => {
+    for(let i=0; i<b.length; i+=PRN_CHUNK){
+      await w.write(b.slice(i, i+PRN_CHUNK));
+      if(b.length > PRN_CHUNK) await sleep(PRN_PAUSE);
+    }
+  };
+  const style = PRN_RAW ? [] : prnStyleBytes(cfg);
   for(const c of chunks){
-    const bytes = (c instanceof Uint8Array) ? c : encPrinter(c, cp);
-    for(let i=0; i<bytes.length; i+=PRN_CHUNK){
-      await w.write(bytes.slice(i, i+PRN_CHUNK));
-      if(bytes.length > PRN_CHUNK) await sleep(PRN_PAUSE);
+    if(c instanceof Uint8Array){ await raw(c); continue; }
+    if(PRN_RAW){ await raw(encPrinter(c, cfg.codepage)); continue; }
+    /* Una línea a la vez, reafirmando el estilo antes de cada una */
+    const parts = String(c).split('\n');
+    for(let i=0; i<parts.length; i++){
+      if(parts[i]){
+        for(const b of style) await w.write(b);
+        await raw(encPrinter(parts[i], cfg.codepage));
+      }
+      if(i < parts.length-1) await raw(new Uint8Array([0x0A]));
     }
   }
 }
 
-/* ── Formato a 32 columnas (ancho real de una POS-58 en fuente A) ── */
-const PRN_W = 16;   /* doble ancho: caben 16 caracteres, no 32 */
+/* ── Formato ──
+   A doble ancho caben 16 caracteres por línea en una POS-58 (no 32). */
+const PRN_W = 16;
 function prnLine(ch='-'){ return ch.repeat(PRN_W)+'\n'; }
 function prnRow(left, right){
-  const w = PRN_W;
   left = String(left); right = String(right);
-  const space = w - right.length;
-  if(left.length > space-1) left = left.slice(0, Math.max(1,space-1));
+  const space = PRN_W - right.length;
+  if(left.length > space-1) left = left.slice(0, Math.max(1, space-1));
   return left + ' '.repeat(Math.max(1, space-left.length)) + right + '\n';
+}
+function prnCenter(txt){
+  txt = String(txt).slice(0, PRN_W);
+  const pad = Math.max(0, Math.floor((PRN_W - txt.length)/2));
+  return ' '.repeat(pad) + txt + '\n';
+}
+const noSym = n => fmt(n).replace(/^\$/,'');
+/* Cada producto ocupa 2 líneas: el nombre completo y luego cantidad × precio.
+   A 16 columnas, meterlo todo en una sola línea cortaría demasiado el nombre. */
+function prnItem(it){
+  const name = String(it.name||'').slice(0, PRN_W);
+  return name + '\n' + prnRow(`${it.quantity} x ${noSym(it.price)}`, fmt(it.subtotal));
 }
 
 async function printEscPos(sale){
-  const cfg = prnCfg();
   await applyPrinterSettings();
-  await writeToPrinter(
-    ESC.CENTER, ESC.BIG_ON, ESC.BOLD_ON, 'TIENDA POS\n', ESC.BOLD_OFF, ESC.BIG_OFF,
-    new Date().toLocaleString('es-MX')+'\n',
-    ESC.LEFT, prnLine()
-  );
+  const d = new Date();
+  const fecha = d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'})
+              + ' ' + d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  await writeToPrinter(prnCenter('TIENDA POS'), prnCenter(fecha), prnLine());
   for(const it of sale.items){
-    await writeToPrinter(prnRow(`${it.name} x${it.quantity}`, fmt(it.subtotal)));
+    await writeToPrinter(prnItem(it));
   }
   await writeToPrinter(prnLine());
-  await writeToPrinter(prnRow('Subtotal', fmt(sale.subtotal)));
-  if(sale.discountAmt) await writeToPrinter(prnRow('Descuento', '-'+fmt(sale.discountAmt)));
-  await writeToPrinter(ESC.BOLD_ON, ESC.BIG_ON, prnRow('TOTAL', fmt(sale.total)), ESC.BIG_OFF, ESC.BOLD_OFF);
-  await writeToPrinter(ESC.CENTER, '\nGracias por su compra\n', ESC.FEED, ESC.CUT);
+  await writeToPrinter(prnRow('Subtot', fmt(sale.subtotal)));
+  if(sale.discountAmt) await writeToPrinter(prnRow('Desc', '-'+fmt(sale.discountAmt)));
+  await writeToPrinter(prnRow('TOTAL', fmt(sale.total)));
+  await writeToPrinter(prnLine(), prnCenter('Gracias!'), ESC.FEED, ESC.CUT);
 }
 
 async function testPrint(){
   if(!S.printer.connected){ showToast('Primero conecta una impresora','warning'); return; }
   try{
-    await printEscPos({items:[{name:'Producto de prueba ñÁ',quantity:1,subtotal:10}], subtotal:10, discountAmt:0, total:10});
+    await printEscPos({
+      items:[{name:'Prueba ñÁ',quantity:2,price:5,subtotal:10}],
+      subtotal:10, discountAmt:0, total:10
+    });
     showToast('Ticket de prueba enviado','success');
   }catch(e){ showToast('Error al imprimir: '+e.message,'error'); }
 }
@@ -2909,18 +2946,20 @@ async function testPrint(){
 async function testPrintDensity(){
   if(!S.printer.connected){ showToast('Primero conecta una impresora','warning'); return; }
   const cfg = prnCfg();
+  PRN_RAW = true;   // sin estilo forzado: aquí sí queremos comparar normal vs doble
   try{
-    await writeToPrinter(ESC.INIT, codepageCmd(cfg.codepage), ESC.CENTER, ESC.BOLD_ON,
-      'PRUEBA DE DENSIDAD\n', ESC.BOLD_OFF, ESC.LEFT, prnLine());
+    await writeToPrinter(ESC.INIT, codepageCmd(cfg.codepage), ESC.CENTER,
+      'PRUEBA DE DENSIDAD\n', ESC.LEFT, '-'.repeat(32)+'\n');
     for(let d=1; d<=5; d++){
       await writeToPrinter(new Uint8Array([0x1B,0x37,7,[60,100,140,180,230][d-1], Math.min(15,Math.max(1,cfg.interval))]));
-      await writeToPrinter(ESC.DBL_OFF, `Densidad ${d} normal  0123456789 ABCabc\n`);
-      await writeToPrinter(ESC.DBL_ON,  `Densidad ${d} doble   0123456789 ABCabc\n`, ESC.DBL_OFF);
+      await writeToPrinter(new Uint8Array([0x1B,0x47,0x00]), `Densidad ${d} normal 0123 ABCabc\n`);
+      await writeToPrinter(new Uint8Array([0x1B,0x47,0x01]), `Densidad ${d} doble  0123 ABCabc\n`);
     }
-    await writeToPrinter(prnLine(), 'Elige la mas nitida y ponla arriba.\n', ESC.FEED, ESC.CUT);
-    await applyPrinterSettings();
+    await writeToPrinter(new Uint8Array([0x1B,0x47,0x00]), '-'.repeat(32)+'\n',
+      'Elige la mas nitida.\n', ESC.FEED, ESC.CUT);
     showToast('Prueba de densidad enviada','success');
   }catch(e){ showToast('Error al imprimir: '+e.message,'error'); }
+  finally{ await applyPrinterSettings().catch(()=>{ PRN_RAW = false; }); }
 }
 
 /* ════════════════════════════════════
