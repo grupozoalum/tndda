@@ -2810,10 +2810,11 @@ const ESC = {
 let PRN_RAW = false;   // true = escribir sin estilo (solo la prueba de densidades)
 function prnStyleBytes(cfg){
   return [
-    new Uint8Array([0x1B,0x21,0x38]),
-    new Uint8Array([0x1D,0x21,0x11]),
-    new Uint8Array([0x1B,0x45,0x01]),
-    new Uint8Array([0x1B,0x47, cfg.doubleStrike?1:0]),
+    heatCmd(cfg),                                  // mismo calor → mismo tono en toda la hoja
+    new Uint8Array([0x1B,0x21,0x38]),              // ESC ! negrita + doble alto + doble ancho
+    new Uint8Array([0x1D,0x21,0x11]),              // GS  ! doble alto + doble ancho
+    new Uint8Array([0x1B,0x45,0x01]),              // ESC E negritas
+    new Uint8Array([0x1B,0x47, cfg.doubleStrike?1:0]), // ESC G doble pasada
   ];
 }
 
@@ -2833,7 +2834,7 @@ async function applyPrinterSettings(){
   PRN_RAW = false;
   if(!S.printer.connected) return;
   const cfg = prnCfg();
-  const parts = [ESC.INIT, heatCmd(cfg), codepageCmd(cfg.codepage), ...prnStyleBytes(cfg)];
+  const parts = [ESC.INIT, codepageCmd(cfg.codepage), ...prnStyleBytes(cfg)];
   if(cfg.useDC2) parts.splice(3, 0, new Uint8Array([0x12,0x23, ((Math.min(7,cfg.density+2))<<5) | 0x0A]));
   await writeToPrinter(...parts);
 }
