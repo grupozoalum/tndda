@@ -170,61 +170,65 @@
 </div>
 
 <!-- ▌NAVBAR ▐ -->
-<nav class="h-14 bg-indigo-700 text-white flex items-center justify-between px-3 sm:px-4 shadow-lg fixed w-full top-0 z-40">
-  <div class="flex items-center gap-2">
-    <span class="text-xl sm:text-2xl">🏪</span>
-    <span class="font-bold text-sm sm:text-base tracking-tight hidden sm:inline">Tienda POS</span>
-    <span id="modeTag" class="text-[10px] sm:text-xs bg-white/15 border border-white/20 px-2 py-0.5 rounded-full">
-      Consulta de Precios
+<nav class="h-14 bg-indigo-700 text-white flex items-center justify-between px-2 sm:px-4 shadow-lg fixed w-full top-0 z-40 gap-1">
+  <!-- Izquierda -->
+  <div class="flex items-center gap-1 sm:gap-2 shrink min-w-0">
+    <span class="text-xl sm:text-2xl shrink-0">🏪</span>
+    <span class="font-bold text-sm sm:text-base tracking-tight hidden sm:inline shrink-0">Tienda POS</span>
+    <span id="modeTag" class="text-[10px] sm:text-xs bg-white/15 border border-white/20 px-1.5 sm:px-2 py-0.5 rounded-full truncate shrink min-w-0">
+      Consulta
     </span>
-    <span id="branchTag" class="hidden text-[10px] sm:text-xs bg-white/10 border border-white/20 px-2 py-0.5 rounded-full items-center gap-1">
-      <i class="fa-solid fa-store text-[9px]"></i><span id="branchTagName"></span>
+    <span id="branchTag" class="hidden text-[10px] sm:text-xs bg-white/10 border border-white/20 px-1.5 sm:px-2 py-0.5 rounded-full items-center gap-1 truncate shrink min-w-0">
+      <i class="fa-solid fa-store text-[9px] shrink-0"></i><span id="branchTagName" class="truncate"></span>
     </span>
   </div>
-  <div class="flex items-center gap-2">
-    <!-- Estado de conexión / sincronización -->
-    <button id="netBtn" onclick="openSyncModal()" class="relative flex items-center gap-1.5 bg-white/15 hover:bg-white/25 active:bg-white/30 px-2 py-1.5 rounded-lg text-xs font-medium transition min-h-[36px]" title="Estado de conexión">
+  
+  <!-- Derecha -->
+  <div class="flex items-center gap-1 sm:gap-2 shrink-0">
+    <button id="netBtn" onclick="openSyncModal()" class="relative flex items-center justify-center bg-white/15 hover:bg-white/25 active:bg-white/30 p-1.5 sm:px-2 sm:py-1.5 rounded-lg text-xs font-medium transition min-h-[32px] sm:min-h-[36px] min-w-[32px]" title="Estado de conexión">
       <span id="netDot" class="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
-      <span id="netLabel" class="hidden lg:inline">En línea</span>
+      <span id="netLabel" class="hidden lg:inline ml-1.5">En línea</span>
       <span id="netPending" class="hidden absolute -top-1 -right-1 bg-amber-400 text-amber-900 text-[9px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center">0</span>
     </button>
-    <!-- Low stock bell (seller/admin only) -->
-    <button id="stockBell" onclick="openStockAlerts()" class="hidden relative bg-white/15 hover:bg-white/25 active:bg-white/30 p-2 rounded-lg text-sm transition min-h-[36px] min-w-[36px]" title="Alertas de stock">
+    
+    <button id="stockBell" onclick="openStockAlerts()" class="hidden relative bg-white/15 hover:bg-white/25 active:bg-white/30 p-1.5 sm:p-2 rounded-lg text-sm transition min-h-[32px] sm:min-h-[36px] min-w-[32px] flex items-center justify-center" title="Alertas de stock">
       <i class="fa-solid fa-bell"></i>
       <span id="stockBellCount" class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">0</span>
     </button>
-    <!-- Sync dot -->
+    
     <div class="hidden sm:flex items-center gap-1.5 text-xs text-indigo-200">
       <span id="syncDot" class="w-2 h-2 rounded-full bg-gray-400 inline-block"></span>
       <span id="syncText" class="hidden md:inline">Sin escáner remoto</span>
     </div>
-    <!-- Clock -->
+    
     <div id="navClock" class="hidden lg:block text-xs text-indigo-200 tabular-nums font-mono"></div>
-    <!-- Shift / Corte de caja -->
-    <button id="shiftBtn" onclick="openShiftModal()" class="hidden items-center gap-1.5 bg-white/15 hover:bg-white/25 active:bg-white/30 px-2.5 py-1.5 rounded-lg text-xs font-medium transition min-h-[36px]">
+    
+    <button id="shiftBtn" onclick="openShiftModal()" class="hidden items-center justify-center gap-1.5 bg-white/15 hover:bg-white/25 active:bg-white/30 p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-medium transition min-h-[32px] sm:min-h-[36px] min-w-[32px]">
       <span id="shiftDot" class="shift-dot bg-gray-300"></span>
       <span id="shiftBtnLabel" class="hidden sm:inline">Turno</span>
     </button>
-    <!-- Hardware / settings -->
-    <button id="hwBtn" onclick="openHardwareModal()" class="hidden bg-white/15 hover:bg-white/25 active:bg-white/30 p-2 rounded-lg text-sm transition min-h-[36px] min-w-[36px]" title="Hardware (impresora / escáner)">
+
+    <button id="navAdminBtn" onclick="openAdmin()" class="hidden bg-yellow-400/20 hover:bg-yellow-400/40 text-yellow-100 p-1.5 sm:p-2 rounded-lg text-sm transition min-h-[32px] sm:min-h-[36px] min-w-[32px] flex items-center justify-center" title="Panel Admin">
+      <i class="fa-solid fa-chart-line"></i>
+    </button>
+    
+    <button id="hwBtn" onclick="openHardwareModal()" class="hidden bg-white/15 hover:bg-white/25 active:bg-white/30 p-1.5 sm:p-2 rounded-lg text-sm transition min-h-[32px] sm:min-h-[36px] min-w-[32px] flex items-center justify-center" title="Hardware">
       <i class="fa-solid fa-print"></i>
     </button>
-    <!-- Sound toggle -->
-    <button onclick="toggleSound()" id="soundBtn" class="bg-white/15 hover:bg-white/25 active:bg-white/30 p-2 rounded-lg text-sm transition min-h-[36px] min-w-[36px]" title="Sonido">
+    
+    <button onclick="toggleSound()" id="soundBtn" class="bg-white/15 hover:bg-white/25 active:bg-white/30 p-1.5 sm:p-2 rounded-lg text-sm transition min-h-[32px] sm:min-h-[36px] min-w-[32px] flex items-center justify-center" title="Sonido">
       <i class="fa-solid fa-volume-high"></i>
     </button>
-    <!-- Login / User -->
-    <button id="navLoginBtn" onclick="showLoginModal()"
-      class="bg-white/20 hover:bg-white/30 active:bg-white/40 px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5 text-sm min-h-[36px]">
+    
+    <button id="navLoginBtn" onclick="showLoginModal()" class="bg-white/20 hover:bg-white/30 active:bg-white/40 px-2 sm:px-3 py-1.5 rounded-lg font-medium transition flex items-center justify-center gap-1.5 text-xs sm:text-sm min-h-[32px] sm:min-h-[36px]">
       <i class="fa-solid fa-sign-in-alt"></i>
       <span class="hidden sm:inline">Iniciar Sesión</span>
     </button>
-    <button id="navAdminBtn" onclick="openAdmin()" class="hidden bg-yellow-400/20 hover:bg-yellow-400/40 text-yellow-100 p-2 rounded-lg text-sm transition min-h-[36px] min-w-[36px]" title="Panel Admin">
-      <i class="fa-solid fa-chart-line"></i>
-    </button>
-    <div id="navUserArea" class="hidden items-center gap-2">
-      <span id="navUserName" class="text-xs text-indigo-200 max-w-[100px] sm:max-w-[160px] truncate"></span>
-      <button onclick="logout()" class="bg-red-500/80 hover:bg-red-500 active:bg-red-600 p-2 rounded-lg text-sm transition min-h-[36px] min-w-[36px]">
+    
+    <div id="navUserArea" class="hidden items-center gap-1 sm:gap-2">
+      <!-- Ocultamos el nombre de usuario en celulares (hidden md:block) para salvar espacio -->
+      <span id="navUserName" class="hidden md:block text-xs text-indigo-200 max-w-[80px] sm:max-w-[160px] truncate"></span>
+      <button onclick="logout()" class="bg-red-500/80 hover:bg-red-500 active:bg-red-600 p-1.5 sm:p-2 rounded-lg text-sm transition min-h-[32px] sm:min-h-[36px] min-w-[32px] flex items-center justify-center" title="Cerrar sesión">
         <i class="fa-solid fa-right-from-bracket"></i>
       </button>
     </div>
