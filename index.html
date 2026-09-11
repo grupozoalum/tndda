@@ -3649,11 +3649,15 @@ function printReceipt(){
 ════════════════════════════════════ */
 function openAdmin(){
   g('adminPanel').classList.remove('hidden');
+  g('cartFab').classList.add('hidden'); // Ocultar burbuja del carrito en Admin
   g('adminEmailLabel').textContent=S.user?.email||'';
   g('adminEmailLabelMob').textContent=S.user?.email||'';
   switchTab('metrics');
 }
-function closeAdmin(){ g('adminPanel').classList.add('hidden'); }
+function closeAdmin(){ 
+  g('adminPanel').classList.add('hidden'); 
+  if(S.user) g('cartFab').classList.remove('hidden'); // Mostrar burbuja al volver al POS
+}
 
 function switchTab(tab){
   /* Desktop sidebar */
