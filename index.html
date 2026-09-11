@@ -398,13 +398,19 @@
           </div>
         </div>
         <!-- Add to cart (seller/admin only) -->
-        <div id="addToCartArea" class="hidden px-4 sm:px-5 py-4 border-t border-slate-100">
+        <div id="addToCartArea" class="hidden px-4 sm:px-5 py-4 border-t border-slate-100 flex flex-col gap-3">
+          <!-- Selector de unidad para Granel -->
+          <div id="bulkUnitArea" class="hidden flex gap-2">
+            <button id="btnUnitKg" onclick="setBulkUnit('kg')" class="flex-1 py-2 rounded-lg text-sm font-bold border-2 border-indigo-500 bg-indigo-50 text-indigo-700 transition">Kilos (kg)</button>
+            <button id="btnUnitG" onclick="setBulkUnit('g')" class="flex-1 py-2 rounded-lg text-sm font-bold border-2 border-slate-200 bg-slate-50 text-slate-500 transition">Gramos (g)</button>
+          </div>
+          
           <div class="flex items-center gap-2">
             <div class="flex items-center border border-slate-200 rounded-xl overflow-hidden">
-              <button onclick="changeQty(-1)" class="px-3 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 font-bold text-slate-600 text-lg leading-none min-w-[44px]">−</button>
-              <input id="qtyInput" type="number" step="any" value="1" min="0.01"
+              <button id="qtyMinusBtn" onclick="changeQty(-1)" class="px-3 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 font-bold text-slate-600 text-lg leading-none min-w-[44px]">−</button>
+              <input id="qtyInput" type="number" step="any" value="1" min="0.001"
                 class="w-20 text-center py-3 text-sm font-bold border-0 focus:outline-none placeholder-slate-400">
-              <button onclick="changeQty(1)" class="px-3 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 font-bold text-slate-600 text-lg leading-none min-w-[44px]">+</button>
+              <button id="qtyPlusBtn" onclick="changeQty(1)" class="px-3 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 font-bold text-slate-600 text-lg leading-none min-w-[44px]">+</button>
             </div>
             <button onclick="addToCart()"
               class="flex-1 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white py-3 rounded-xl font-semibold text-sm transition min-h-[44px]">
@@ -2479,6 +2485,19 @@ async function doSearch(queryOverride){
   else showNotFound(raw);
 }
 
+window._bulkUnit = 'kg';
+function setBulkUnit(unit) {
+  window._bulkUnit = unit;
+  const act = 'flex-1 py-2 rounded-lg text-sm font-bold border-2 border-indigo-500 bg-indigo-50 text-indigo-700 transition';
+  const inact = 'flex-1 py-2 rounded-lg text-sm font-bold border-2 border-slate-200 bg-slate-50 text-slate-500 transition';
+  g('btnUnitKg').className = (unit === 'kg') ? act : inact;
+  g('btnUnitG').className = (unit === 'g') ? act : inact;
+  
+  const qtyInp = g('qtyInput');
+  qtyInp.placeholder = (unit === 'g') ? 'Ej: 500' : 'Ej: 1.5';
+  qtyInp.focus();
+}
+
 function showProduct(p){
   S.curProduct = p;
   g('pdBarcode').textContent = 'Cód: '+p.barcode;
@@ -2488,11 +2507,16 @@ function showProduct(p){
   const qtyInp = g('qtyInput');
   if(p.isBulk) {
     g('pdPrice').textContent = fmt(p.price) + ' / kg';
+    g('bulkUnitArea').classList.remove('hidden');
+    g('qtyMinusBtn').classList.add('hidden');
+    g('qtyPlusBtn').classList.add('hidden');
     qtyInp.value = '';
-    qtyInp.placeholder = 'Peso';
-    setTimeout(() => qtyInp.focus(), 150); // Manda el cursor ahí automáticamente
+    setBulkUnit('kg'); // Arranca en Kilos por defecto
   } else {
     g('pdPrice').textContent = fmt(p.price);
+    g('bulkUnitArea').classList.add('hidden');
+    g('qtyMinusBtn').classList.remove('hidden');
+    g('qtyPlusBtn').classList.remove('hidden');
     qtyInp.value = 1;
     qtyInp.placeholder = '';
   }
@@ -2522,32 +2546,59 @@ function addToCart(){
   if(!S.curProduct) return;
   
   const rawQty = g('qtyInput').value;
-  // Si es a granel y dejaron el peso vacío, detenemos y avisamos
   if(S.curProduct.isBulk && !rawQty) {
     showToast('Ingresa el peso o cantidad', 'warning');
     g('qtyInput').focus();
     return;
   }
   
-  const qty = Math.max(0.01, parseFloat(rawQty)||1);
+  // Si eligió 'g' (gramos), dividimos entre 1000 para que se calcule por kilo
+  let parsedQty = parseFloat(rawQty) || 1;
+  if (S.curProduct.isBulk && window._bulkUnit === 'g') {
+    parsedQty = parsedQty / 1000;
+  }
+  
+  // Usamos toFixed(3) para evitar números raros (ej: 0.3333333)
+  const qty = Number(Math.max(0.001, parsedQty).toFixed(3));
   const p = S.curProduct;
   const ex = S.cart.find(i=>i.barcode===p.barcode);
   const newQty = (ex?ex.quantity:0)+qty;
+  
   if(typeof p.stock === 'number' && newQty > p.stock){
     showToast(`Solo quedan ${p.stock} en stock (tienes ${ex?ex.quantity:0} en el carrito)`,'warning');
   }
-  if(ex){ ex.quantity+=qty; ex.subtotal=ex.price*ex.quantity; }
-  else S.cart.push({barcode:p.barcode,name:p.name,price:p.price,cost:Number(p.cost)||0,quantity:qty,subtotal:p.price*qty});
+  
+  if(ex){ 
+    ex.quantity = Number((ex.quantity + qty).toFixed(3)); 
+    ex.subtotal = ex.price * ex.quantity; 
+  } else {
+    S.cart.push({
+      barcode: p.barcode, 
+      name: p.name, 
+      price: p.price, 
+      cost: Number(p.cost)||0, 
+      quantity: qty, 
+      subtotal: p.price * qty, 
+      isBulk: p.isBulk
+    });
+  }
+  
   renderCart();
   showToast(p.name+' agregado ✓','success');
   beep('add');
-  g('qtyInput').value=1;
+  g('qtyInput').value = p.isBulk ? '' : 1;
+  if(p.isBulk) g('qtyInput').focus();
   const fab=g('cartFab'); fab.classList.remove('pulse-add'); void fab.offsetWidth; fab.classList.add('pulse-add');
 }
 function removeCartItem(b){ S.cart=S.cart.filter(i=>i.barcode!==b); renderCart(); }
 function changeCartQty(b,d){
-  const i=S.cart.find(i=>i.barcode===b);
-  if(i){ i.quantity=Math.max(0.01,i.quantity+d); i.subtotal=i.price*i.quantity; renderCart(); }
+  const i=S.cart.find(x=>x.barcode===b);
+  if(i){ 
+    i.quantity = Math.max(0.01, i.quantity + d); 
+    i.quantity = Number(i.quantity.toFixed(3));
+    i.subtotal = i.price * i.quantity; 
+    renderCart(); 
+  }
 }
 async function clearCart(){
   if(S.cart.length){
@@ -2569,7 +2620,7 @@ const cartItemHTML = it => `
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-1">
         <button onclick="changeCartQty('${it.barcode}',-1)" class="w-6 h-6 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 rounded-full text-sm font-bold flex items-center justify-center">−</button>
-        <span class="text-xs font-bold w-6 text-center">${it.quantity}</span>
+        <span class="text-xs font-bold min-w-[24px] text-center">${it.quantity}${it.isBulk ? 'kg' : ''}</span>
         <button onclick="changeCartQty('${it.barcode}',1)" class="w-6 h-6 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 rounded-full text-sm font-bold flex items-center justify-center">+</button>
       </div>
       <p class="text-sm font-black text-indigo-700">${fmt(it.subtotal)}</p>
