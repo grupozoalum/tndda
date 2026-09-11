@@ -2328,6 +2328,7 @@ auth.onAuthStateChanged(async user => {
     g('navUserName').textContent = user.displayName || user.email;
     g('shiftBtn').classList.remove('hidden'); g('shiftBtn').classList.add('flex');
     g('hwBtn').classList.remove('hidden');
+    restoreLocalCart();
     checkCurrentShift();
     if(S.isAdmin){
       tag.textContent='🔐 Admin';
@@ -2424,9 +2425,28 @@ async function doLogin(){
   } finally { btn.disabled=false; btn.innerHTML='<i class="fa-solid fa-sign-in-alt mr-1.5"></i>Entrar'; }
 }
 async function logout(){
-  await auth.signOut(); clearCart();
+  await auth.signOut(); 
+  S.cart=[]; S.discount=null; renderCart(); // Vaciar carrito silenciosamente al salir
   closeMobileCart();
   showToast('Sesión cerrada','info');
+}
+
+/* ── Persistencia del carrito actual ── */
+function saveLocalCart() {
+  try { localStorage.setItem('posActiveCart_v1', JSON.stringify({cart: S.cart, discount: S.discount})); } catch(e){}
+}
+function restoreLocalCart() {
+  try {
+    const raw = localStorage.getItem('posActiveCart_v1');
+    if(raw){
+      const parsed = JSON.parse(raw);
+      if(parsed && Array.isArray(parsed.cart)){
+        S.cart = parsed.cart;
+        S.discount = parsed.discount || null;
+        renderCart();
+      }
+    }
+  } catch(e){}
 }
 
 /* ════════════════════════════════════
@@ -2674,6 +2694,7 @@ function renderCart(){
 
   refreshParkBadges();
   scheduleCustomerDisplayPush();
+  saveLocalCart();
 }
 
 /* Toggle cart drawer/sheet for Mobile & PC */
