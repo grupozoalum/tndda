@@ -2330,7 +2330,7 @@ auth.onAuthStateChanged(async user => {
     g('hwBtn').classList.remove('hidden');
     checkCurrentShift();
     if(S.isAdmin){
-      tag.textContent='🔐 Admin/POS';
+      tag.textContent='🔐 Admin';
       tag.className='text-[10px] sm:text-xs bg-yellow-400 text-yellow-900 font-bold px-2 py-0.5 rounded-full';
       showCart(true);
       g('navAdminBtn').classList.remove('hidden');
