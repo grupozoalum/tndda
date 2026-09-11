@@ -23,7 +23,7 @@
     /* Scanner line */
     .scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#818cf8,transparent);
       box-shadow:0 0 8px #818cf8;animation:scanMove 1.8s ease-in-out infinite;pointer-events:none;z-index:2}
-    @keyframes scanMove{0%{top:5%;opacity:0}10%{opacity:1}90%{opacity:1}100%{top:95%;opacity:0}}
+    @keyframes scanMove{0%{top:10%;opacity:0}15%{opacity:1}85%{opacity:1}100%{top:80%;opacity:0}}
     /* Admin tabs */
     .atab{color:#6b7280;transition:all .15s;cursor:pointer}
     .atab:hover{background:#1f2937;color:#e5e7eb}
@@ -219,6 +219,9 @@
       <i class="fa-solid fa-sign-in-alt"></i>
       <span class="hidden sm:inline">Iniciar Sesión</span>
     </button>
+    <button id="navAdminBtn" onclick="openAdmin()" class="hidden bg-yellow-400/20 hover:bg-yellow-400/40 text-yellow-100 p-2 rounded-lg text-sm transition min-h-[36px] min-w-[36px]" title="Panel Admin">
+      <i class="fa-solid fa-chart-line"></i>
+    </button>
     <div id="navUserArea" class="hidden items-center gap-2">
       <span id="navUserName" class="text-xs text-indigo-200 max-w-[100px] sm:max-w-[160px] truncate"></span>
       <button onclick="logout()" class="bg-red-500/80 hover:bg-red-500 active:bg-red-600 p-2 rounded-lg text-sm transition min-h-[36px] min-w-[36px]">
@@ -237,13 +240,15 @@
     <!-- Search -->
     <div class="bg-white border-b border-slate-200 px-3 py-2 shadow-sm shrink-0">
       <div class="flex gap-2">
-        <div class="relative flex-1 min-w-0">
+        <div class="relative flex-1 min-w-0" id="searchWrapper">
           <i class="fa-solid fa-barcode absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
           <input id="searchInput" type="text" inputmode="text" autocomplete="off"
             placeholder="Buscar producto o código…"
+            oninput="handleSearchInput(this.value)"
             class="w-full pl-9 pr-3 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             onkeydown="if(event.key==='Enter'){event.preventDefault();doSearch();}">
           <span id="hwScanBadge" class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-indigo-500 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-full"><i class="fa-solid fa-keyboard mr-0.5"></i>USB</span>
+          <div id="searchDropdown" class="hidden absolute left-0 right-0 top-[110%] bg-white border border-slate-200 rounded-xl shadow-xl z-50 max-h-64 overflow-y-auto divide-y divide-slate-100"></div>
         </div>
         <button onclick="openScanModal()"
           class="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white px-3.5 rounded-xl transition flex items-center gap-2 text-sm font-medium min-w-[44px] min-h-[44px]">
@@ -397,8 +402,8 @@
           <div class="flex items-center gap-2">
             <div class="flex items-center border border-slate-200 rounded-xl overflow-hidden">
               <button onclick="changeQty(-1)" class="px-3 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 font-bold text-slate-600 text-lg leading-none min-w-[44px]">−</button>
-              <input id="qtyInput" type="number" value="1" min="1"
-                class="w-12 text-center py-3 text-sm font-bold border-0 focus:outline-none">
+              <input id="qtyInput" type="number" step="any" value="1" min="0.01"
+                class="w-20 text-center py-3 text-sm font-bold border-0 focus:outline-none placeholder-slate-400">
               <button onclick="changeQty(1)" class="px-3 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 font-bold text-slate-600 text-lg leading-none min-w-[44px]">+</button>
             </div>
             <button onclick="addToCart()"
@@ -1203,9 +1208,13 @@
     <div id="payDiscountRow" class="hidden flex justify-between items-center mb-1 text-sm text-emerald-600">
       <span>Descuento</span><span id="payDiscountAmt" class="font-semibold">-$0.00</span>
     </div>
-    <div class="flex justify-between items-center mb-4">
-      <span class="font-bold text-slate-700">Total a cobrar</span>
+    <div class="flex justify-between items-center mb-2">
+      <span class="font-bold text-slate-700">Total Venta</span>
       <span id="payTotal" class="font-black text-2xl text-indigo-700"></span>
+    </div>
+    <div id="payFeeRow" class="hidden flex justify-between items-center mb-4 text-sm text-blue-600 bg-blue-50 px-3 py-2 rounded-lg border border-blue-100">
+      <span class="font-semibold"><i class="fa-solid fa-credit-card mr-1"></i>Comisión tarjeta (4%)</span>
+      <span id="payFeeAmt" class="font-black">+$0.00</span>
     </div>
     <!-- Method -->
     <div class="grid grid-cols-3 gap-2 mb-4">
@@ -1266,9 +1275,12 @@
     </div>
     <div class="space-y-3">
       <div>
-        <label class="text-xs font-semibold text-slate-500 mb-1 block">Código de barras</label>
+        <label class="text-xs font-semibold text-slate-500 mb-1 flex items-center justify-between">
+          <span>Código de barras</span>
+          <span class="text-[10px] text-slate-400 font-normal">Dejar vacío para auto-generar</span>
+        </label>
         <div class="flex gap-2">
-          <input id="pf_barcode" type="text" inputmode="numeric" placeholder="Ej: 7501055300895"
+          <input id="pf_barcode" type="text" inputmode="numeric" placeholder="Opcional (se generará uno corto)"
             class="flex-1 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[48px]">
           <button onclick="startProductScan()" class="bg-indigo-100 hover:bg-indigo-200 active:bg-indigo-300 text-indigo-700 px-4 py-3 rounded-xl transition min-w-[48px] min-h-[48px]">
             <i class="fa-solid fa-camera"></i>
@@ -1321,6 +1333,12 @@
         <label class="flex items-center gap-2 text-xs font-semibold text-slate-500 select-none">
           <input id="pf_favorite" type="checkbox" class="accent-amber-500 w-4 h-4">
           <i class="fa-solid fa-bolt text-amber-400"></i>Mostrar en acceso rápido (favorito)
+        </label>
+      </div>
+      <div>
+        <label class="flex items-center gap-2 text-xs font-semibold text-slate-500 select-none">
+          <input id="pf_isBulk" type="checkbox" class="accent-indigo-600 w-4 h-4">
+          <i class="fa-solid fa-scale-balanced text-indigo-400"></i>Vender a granel / peso (permite decimales)
         </label>
       </div>
       <div class="flex gap-3 pt-1">
@@ -2302,9 +2320,10 @@ auth.onAuthStateChanged(async user => {
     g('hwBtn').classList.remove('hidden');
     checkCurrentShift();
     if(S.isAdmin){
-      tag.textContent='🔐 Admin';
+      tag.textContent='🔐 Admin/POS';
       tag.className='text-[10px] sm:text-xs bg-yellow-400 text-yellow-900 font-bold px-2 py-0.5 rounded-full';
-      showCart(false);
+      showCart(true);
+      g('navAdminBtn').classList.remove('hidden');
       openAdmin();
     } else {
       tag.textContent='💼 Modo Venta';
@@ -2314,6 +2333,7 @@ auth.onAuthStateChanged(async user => {
   } else {
     g('navLoginBtn').classList.remove('hidden');
     g('navUserArea').classList.add('hidden');
+    g('navAdminBtn').classList.add('hidden');
     g('shiftBtn').classList.add('hidden'); g('shiftBtn').classList.remove('flex');
     g('hwBtn').classList.add('hidden');
     S.currentShift=null;
@@ -2402,6 +2422,24 @@ async function logout(){
 /* ════════════════════════════════════
    SEARCH — uses local cache, no index needed
 ════════════════════════════════════ */
+function handleSearchInput(q) {
+  const dd = g('searchDropdown');
+  if(!q) { dd.classList.add('hidden'); return; }
+  q = q.toLowerCase();
+  const matches = S.products.filter(p => p.active !== false && (p.name.toLowerCase().includes(q) || p.barcode.toLowerCase().includes(q))).slice(0, 8);
+  if(!matches.length) { dd.classList.add('hidden'); return; }
+  dd.innerHTML = matches.map(p => `
+    <div onclick="selectFromDropdown('${esc(p.barcode)}')" class="p-3 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition">
+      <div class="min-w-0 flex-1"><p class="text-sm font-semibold text-slate-800 truncate">${esc(p.name)}</p><p class="text-[10px] text-slate-400">${esc(p.barcode)}</p></div>
+      <span class="text-sm font-black text-indigo-600 shrink-0 ml-2">${fmt(p.price)}</span>
+    </div>`).join('');
+  dd.classList.remove('hidden');
+}
+function selectFromDropdown(barcode) {
+  g('searchDropdown').classList.add('hidden');
+  g('searchInput').value = barcode; doSearch(barcode);
+}
+document.addEventListener('click', e => { if(!e.target.closest('#searchWrapper')) g('searchDropdown')?.classList.add('hidden'); });
 async function doSearch(queryOverride){
   const raw = (queryOverride || g('searchInput').value).trim();
   if(!raw) return;
@@ -2446,8 +2484,19 @@ function showProduct(p){
   g('pdBarcode').textContent = 'Cód: '+p.barcode;
   g('pdName').textContent = p.name;
   g('pdCategory').textContent = p.category||'Sin categoría';
-  g('pdPrice').textContent = fmt(p.price);
-  g('qtyInput').value = 1;
+  
+  const qtyInp = g('qtyInput');
+  if(p.isBulk) {
+    g('pdPrice').textContent = fmt(p.price) + ' / kg';
+    qtyInp.value = '';
+    qtyInp.placeholder = 'Peso';
+    setTimeout(() => qtyInp.focus(), 150); // Manda el cursor ahí automáticamente
+  } else {
+    g('pdPrice').textContent = fmt(p.price);
+    qtyInp.value = 1;
+    qtyInp.placeholder = '';
+  }
+  
   const stockEl = g('pdStock');
   if(typeof p.stock === 'number'){
     stockEl.classList.remove('hidden');
@@ -2471,7 +2520,16 @@ function showNotFound(code){
 ════════════════════════════════════ */
 function addToCart(){
   if(!S.curProduct) return;
-  const qty = Math.max(1, parseInt(g('qtyInput').value)||1);
+  
+  const rawQty = g('qtyInput').value;
+  // Si es a granel y dejaron el peso vacío, detenemos y avisamos
+  if(S.curProduct.isBulk && !rawQty) {
+    showToast('Ingresa el peso o cantidad', 'warning');
+    g('qtyInput').focus();
+    return;
+  }
+  
+  const qty = Math.max(0.01, parseFloat(rawQty)||1);
   const p = S.curProduct;
   const ex = S.cart.find(i=>i.barcode===p.barcode);
   const newQty = (ex?ex.quantity:0)+qty;
@@ -2489,7 +2547,7 @@ function addToCart(){
 function removeCartItem(b){ S.cart=S.cart.filter(i=>i.barcode!==b); renderCart(); }
 function changeCartQty(b,d){
   const i=S.cart.find(i=>i.barcode===b);
-  if(i){ i.quantity=Math.max(1,i.quantity+d); i.subtotal=i.price*i.quantity; renderCart(); }
+  if(i){ i.quantity=Math.max(0.01,i.quantity+d); i.subtotal=i.price*i.quantity; renderCart(); }
 }
 async function clearCart(){
   if(S.cart.length){
@@ -2498,7 +2556,7 @@ async function clearCart(){
   }
   S.cart=[]; S.discount=null; renderCart();
 }
-function changeQty(d){ const el=g('qtyInput'); el.value=Math.max(1,(parseInt(el.value)||1)+d); }
+function changeQty(d){ const el=g('qtyInput'); el.value=Math.max(0.01,(parseFloat(el.value)||1)+d); }
 
 const cartItemHTML = it => `
   <div class="bg-white rounded-xl p-2.5 border border-slate-100">
@@ -3347,6 +3405,22 @@ function showPaymentModal(){
 function hidePayModal(){ g('payModal').classList.add('hidden'); }
 function setQuick(v){ g('cashInput').value=v; calcChange(); }
 
+function recalcTotalConComision() {
+  const {total} = cartTotals();
+  let fee = 0;
+  if (S.payMethod === 'card') {
+    fee = total * 0.04;
+  } else if (S.payMethod === 'mixed') {
+    const cardAmt = parseFloat(g('mixedCardInput').value) || 0;
+    fee = cardAmt * 0.04;
+  }
+  const grandTotal = total + fee;
+  g('payFeeRow').classList.toggle('hidden', fee === 0);
+  g('payFeeAmt').textContent = '+' + fmt(fee);
+  g('payTotal').textContent = fmt(grandTotal);
+  return { baseTotal: total, fee, grandTotal };
+}
+
 function selectPayMethod(m){
   S.payMethod=m;
   const active='border-2 border-emerald-500 bg-emerald-50 text-emerald-700 py-2.5 rounded-xl font-semibold text-xs sm:text-sm min-h-[58px]';
@@ -3358,41 +3432,47 @@ function selectPayMethod(m){
   g('payBtnMixed').className=m==='mixed'?mixedActive:inactive;
   g('cashArea').classList.toggle('hidden',m!=='cash');
   g('mixedArea').classList.toggle('hidden',m!=='mixed');
+  recalcTotalConComision();
+  if(m==='cash') calcChange();
   if(m==='mixed') calcMixed();
 }
 function calcChange(){
-  const {total}=cartTotals();
+  const { grandTotal } = recalcTotalConComision();
   const paid=parseFloat(g('cashInput').value)||0;
-  const change=paid-total;
+  const change=paid-grandTotal;
   g('changeDisplay').textContent=fmt(Math.max(0,change));
   g('changeDisplay').className=change>=0?'text-2xl font-black text-emerald-600':'text-2xl font-black text-red-500';
 }
 function calcMixed(){
-  const {total}=cartTotals();
+  const { grandTotal } = recalcTotalConComision();
   const cash=parseFloat(g('mixedCashInput').value)||0;
   const card=parseFloat(g('mixedCardInput').value)||0;
   const sum=cash+card;
-  const diff=sum-total;
+  const diff=sum-grandTotal;
   const el=g('mixedStatus');
-  if(Math.abs(diff)<0.01){ el.textContent='✓ Cubre el total exacto'; el.className='text-xs font-semibold text-center py-1.5 rounded-lg bg-emerald-50 text-emerald-600'; }
-  else if(diff>0){ el.textContent=`Sobran ${fmt(diff)} — ajusta los montos`; el.className='text-xs font-semibold text-center py-1.5 rounded-lg bg-amber-50 text-amber-600'; }
-  else { el.textContent=`Faltan ${fmt(-diff)} para cubrir el total`; el.className='text-xs font-semibold text-center py-1.5 rounded-lg bg-red-50 text-red-600'; }
+  if(Math.abs(diff)<0.01){ el.textContent='✓ Cubre el total (incl. comisión)'; el.className='text-xs font-semibold text-center py-1.5 rounded-lg bg-emerald-50 text-emerald-600'; }
+  else if(diff>0){ el.textContent=`Sobran ${fmt(diff)} — ajusta montos`; el.className='text-xs font-semibold text-center py-1.5 rounded-lg bg-amber-50 text-amber-600'; }
+  else { el.textContent=`Faltan ${fmt(-diff)} para cubrir total`; el.className='text-xs font-semibold text-center py-1.5 rounded-lg bg-red-50 text-red-600'; }
 }
 
 async function processPayment(){
   if(!S.user){ showToast('Debes iniciar sesión para cobrar','error'); return; }
-  const {subtotal, discountAmt, total} = cartTotals();
-  let paid=total, cashPortion=0, cardPortion=0;
+  const {subtotal, discountAmt, total: baseTotal} = cartTotals();
+  const {fee, grandTotal} = recalcTotalConComision();
+  let paid = grandTotal, cashPortion=0, cardPortion=0;
+  
   if(S.payMethod==='cash'){
     paid=parseFloat(g('cashInput').value)||0;
-    if(paid<total){ showToast('El monto recibido es menor al total','error'); beep('error'); return; }
-    cashPortion=total;
+    if(paid<grandTotal){ showToast('El monto recibido es menor al total','error'); beep('error'); return; }
+    cashPortion=grandTotal;
   } else if(S.payMethod==='mixed'){
     cashPortion=parseFloat(g('mixedCashInput').value)||0;
     cardPortion=parseFloat(g('mixedCardInput').value)||0;
-    if(Math.abs((cashPortion+cardPortion)-total)>0.01){ showToast('Los montos mixtos no cubren el total exacto','error'); beep('error'); return; }
-    paid=total;
-  } else { cardPortion=total; }
+    if(Math.abs((cashPortion+cardPortion)-grandTotal)>0.01){ showToast('Los montos mixtos no cubren el total exacto','error'); beep('error'); return; }
+    paid=grandTotal;
+  } else { cardPortion=grandTotal; }
+  
+  const total = grandTotal;
 
   const btn=g('processBtn');
   btn.disabled=true; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin mr-2"></i>Guardando…';
@@ -3760,20 +3840,29 @@ function editProduct(barcode){
   g('pf_barcode').value=p.barcode; g('pf_barcode').readOnly=true;
   g('pf_name').value=p.name; g('pf_price').value=p.price; g('pf_stock').value=p.stock??''; g('pf_category').value=p.category||'General';
   g('pf_favorite').checked=!!p.favorite;
+  g('pf_isBulk').checked=!!p.isBulk;
   g('pf_cost').value=p.cost??''; g('pf_costRow').classList.toggle('hidden', !S.isAdmin); updateMarginHint();
   S.editingBarcode=barcode;
   g('productModal').classList.remove('hidden');
 }
 async function saveProduct(){
-  const barcode=g('pf_barcode').value.trim();
+  let barcode=g('pf_barcode').value.trim();
   const name=g('pf_name').value.trim();
   const price=parseFloat(g('pf_price').value);
   const stock=parseInt(g('pf_stock').value)||0;
   const category=g('pf_category').value.trim()||'General';
   const favorite=g('pf_favorite').checked;
+  const isBulk=g('pf_isBulk').checked;
+  
   if(!name){showToast('El nombre es requerido','error');return;}
   if(isNaN(price)||price<0){showToast('El precio no es válido','error');return;}
-  const data={name,price,stock,category,favorite,active:true,updatedAt:FS.FieldValue.serverTimestamp()};
+  
+  // Si no tiene código de barras, generamos uno corto interno (Ej: GR-4521)
+  if(!barcode && !S.editingBarcode) {
+    barcode = 'GR-' + Math.floor(1000 + Math.random() * 9000); 
+  }
+  
+  const data={name,price,stock,category,favorite,isBulk,active:true,updatedAt:FS.FieldValue.serverTimestamp()};
   /* Precio de adquisición: SOLO el administrador puede fijarlo */
   if(S.isAdmin){
     const cost=parseFloat(g('pf_cost').value);
@@ -3781,8 +3870,8 @@ async function saveProduct(){
     if(!isNaN(cost) && cost>price) showToast('Ojo: el costo es mayor que el precio de venta','warning');
   }
   try{
-    if(barcode){ if(!S.editingBarcode)data.createdAt=FS.FieldValue.serverTimestamp(); await db.collection('products').doc(barcode).set(data,{merge:true}); }
-    else{ data.createdAt=FS.FieldValue.serverTimestamp(); await db.collection('products').add(data); }
+    if(!S.editingBarcode) data.createdAt=FS.FieldValue.serverTimestamp(); 
+    await db.collection('products').doc(barcode).set(data,{merge:true});
     hideProductModal(); loadProducts();
     showToast('Producto '+(S.editingBarcode?'actualizado':'agregado')+' ✅','success');
   }catch(e){console.error(e);showToast('Error: '+e.message,'error');}
