@@ -102,8 +102,27 @@ const app = express();
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
+// ⚠️ SEGURIDAD: esta carpeta guarda la llave privada de Firebase Admin.
+// Antes express.static servía TODOS los archivos, así que cualquiera podía
+// descargar /serviceAccountKey.json (o tienda-...-firebase-adminsdk-....json)
+// y obtener control total del proyecto. Se bloquean antes de servir estáticos.
+const BLOCKED_FILES = [
+  /serviceaccount/i,          // serviceAccountKey.json y variantes
+  /firebase-adminsdk/i,       // nombre con el que Firebase descarga la llave
+  /^\/app\.js$/i,             // código del servidor
+  /^\/package(-lock)?\.json$/i,
+  /^\/node_modules(\/|$)/i,
+  /(^|\/)\./,                 // .env, .git y cualquier archivo oculto
+];
+app.use((req, res, next) => {
+  let p = req.path;
+  try { p = decodeURIComponent(p); } catch { return res.status(400).end(); }
+  if (BLOCKED_FILES.some(rx => rx.test(p))) return res.status(404).end();
+  next();
+});
+
 // Serve the frontend (index.html + static assets)
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname), { dotfiles: 'deny' }));
 
 /* ─────────────────────────────────────────────────────────────
    AUTH MIDDLEWARE

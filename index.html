@@ -178,8 +178,12 @@
     <span id="modeTag" class="text-[10px] sm:text-xs bg-white/15 border border-white/20 px-1.5 sm:px-2 py-0.5 rounded-full truncate shrink min-w-0">
       Consulta
     </span>
-    <span id="branchTag" class="hidden text-[10px] sm:text-xs bg-white/10 border border-white/20 px-1.5 sm:px-2 py-0.5 rounded-full items-center gap-1 truncate shrink min-w-0">
+    <span id="branchTag" class="hidden relative text-[10px] sm:text-xs bg-white/10 border border-white/20 px-1.5 sm:px-2 py-0.5 rounded-full items-center gap-1 truncate shrink min-w-0">
       <i class="fa-solid fa-store text-[9px] shrink-0"></i><span id="branchTagName" class="truncate"></span>
+      <i id="branchTagChevron" class="hidden fa-solid fa-chevron-down text-[8px] shrink-0 opacity-70"></i>
+      <!-- Admin: elegir en qué sucursal está cobrando (select invisible encima de la etiqueta) -->
+      <select id="navBranchSelect" onchange="setActiveBranch(this.value)" aria-label="Sucursal en la que estás trabajando"
+        class="hidden absolute inset-0 w-full h-full opacity-0 cursor-pointer text-slate-800"></select>
     </span>
   </div>
   
@@ -379,6 +383,7 @@
         <div class="text-4xl mb-2">❌</div>
         <p class="font-bold text-red-700">Producto no encontrado</p>
         <p id="notFoundCode" class="text-red-400 text-sm mt-1"></p>
+        <p id="notFoundHint" class="hidden text-slate-500 text-xs mt-2 leading-snug max-w-sm mx-auto"></p>
         <button id="addFromScanBtn" onclick="showProductModal(true)"
           class="hidden mt-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition min-h-[44px]">
           <i class="fa-solid fa-plus mr-1"></i>Agregar este producto
@@ -394,12 +399,21 @@
               <h2 id="pdName" class="kpi-val text-slate-800 leading-tight mb-1"></h2>
               <span id="pdCategory" class="text-xs text-slate-500 bg-white/70 px-2 py-0.5 rounded-full inline-block"></span>
               <span id="pdStock" class="hidden text-xs px-2 py-0.5 rounded-full inline-block ml-1"></span>
+              <span id="pdSource" class="hidden text-xs px-2 py-0.5 rounded-full inline-block ml-1 bg-cyan-100 text-cyan-700 font-semibold"><i class="fa-solid fa-database mr-1"></i>Del catálogo</span>
+              <p id="pdOtherStock" class="hidden text-[11px] text-slate-500 mt-1.5 break-anywhere"></p>
             </div>
             <div class="text-right shrink-0">
               <p id="pdPrice" class="text-3xl sm:text-4xl font-black text-indigo-600"></p>
               <p class="text-xs text-slate-400 mt-0.5">precio unitario</p>
             </div>
           </div>
+        </div>
+        <!-- Producto importado del catálogo sin precio -->
+        <div id="pdNoPrice" class="hidden px-4 sm:px-5 py-3 bg-amber-50 border-t border-amber-200 flex items-center justify-between gap-3">
+          <p class="text-xs text-amber-800 leading-snug"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Este producto llegó del catálogo sin precio. Hay que asignarle uno antes de venderlo.</p>
+          <button id="pdSetPriceBtn" onclick="editCurrentProduct()" class="hidden shrink-0 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-3 py-2 rounded-lg min-h-[36px]">
+            <i class="fa-solid fa-tag mr-1"></i>Asignar precio
+          </button>
         </div>
         <!-- Add to cart (seller/admin only) -->
         <div id="addToCartArea" class="hidden px-4 sm:px-5 py-4 border-t border-slate-100 flex flex-col gap-3">
@@ -428,7 +442,7 @@
       <div id="stateLoading" class="hidden flex items-center justify-center py-12">
         <div class="flex items-center gap-3 text-slate-400">
           <i class="fa-solid fa-spinner fa-spin text-xl"></i>
-          <span class="text-sm">Buscando producto…</span>
+          <span id="stateLoadingText" class="text-sm">Buscando producto…</span>
         </div>
       </div>
 
@@ -551,6 +565,9 @@
       <button class="atab w-full text-left px-3 py-2.5 rounded-lg text-sm flex items-center gap-2.5 min-h-[44px]" id="tab-products" onclick="switchTab('products')">
         <i class="fa-solid fa-boxes-stacked w-4 text-center"></i>Productos
       </button>
+      <button class="atab w-full text-left px-3 py-2.5 rounded-lg text-sm flex items-center gap-2.5 min-h-[44px]" id="tab-catalog" onclick="switchTab('catalog')">
+        <i class="fa-solid fa-database w-4 text-center"></i>Catálogo maestro
+      </button>
       <button class="atab w-full text-left px-3 py-2.5 rounded-lg text-sm flex items-center gap-2.5 min-h-[44px]" id="tab-inventory" onclick="switchTab('inventory')">
         <i class="fa-solid fa-dolly w-4 text-center"></i>Entradas
       </button>
@@ -609,6 +626,9 @@
       </button>
       <button class="matab px-4 py-2 text-sm font-semibold rounded-t-lg min-h-[40px]" id="mtab-products" onclick="switchTab('products')">
         📦 Productos
+      </button>
+      <button class="matab px-4 py-2 text-sm font-semibold rounded-t-lg min-h-[40px]" id="mtab-catalog" onclick="switchTab('catalog')">
+        🗂️ Catálogo
       </button>
       <button class="matab px-4 py-2 text-sm font-semibold rounded-t-lg min-h-[40px]" id="mtab-inventory" onclick="switchTab('inventory')">
         📥 Entradas
@@ -755,9 +775,24 @@
         </button>
         </div>
       </div>
+      <!-- Stock de antes de separar por sucursal -->
+      <p id="legacyStockProdNotice" class="hidden text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 mb-3 leading-relaxed"></p>
+      <!-- Inventario de qué sucursal se está viendo -->
+      <div id="prodBranchRow" class="hidden flex items-center gap-2 mb-2">
+        <label for="prodBranchView" class="text-xs font-semibold text-slate-500 shrink-0"><i class="fa-solid fa-store text-violet-500 mr-1"></i>Inventario de</label>
+        <select id="prodBranchView" onchange="filterProdTable()"
+          class="flex-1 sm:flex-none sm:min-w-[220px] border border-violet-200 bg-violet-50/50 text-violet-800 px-3 py-2 rounded-xl text-sm font-semibold min-h-[40px]"></select>
+      </div>
       <div class="flex gap-2 mb-3">
         <input id="prodFilter" type="text" placeholder="Buscar productos…" oninput="filterProdTable()"
           class="flex-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <select id="prodSourceFilter" onchange="filterProdTable()" title="Origen del producto"
+          class="shrink-0 border border-slate-200 bg-white text-slate-600 px-2 py-2.5 rounded-xl text-xs font-semibold min-h-[44px] max-w-[120px]">
+          <option value="">Todos</option>
+          <option value="own">Propios</option>
+          <option value="saas">Del catálogo</option>
+          <option value="noprice">Sin precio</option>
+        </select>
         <button id="lowStockBtn" onclick="toggleLowStockFilter()" class="shrink-0 border border-slate-200 bg-white text-slate-500 px-3 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition min-h-[44px]">
           <i class="fa-solid fa-triangle-exclamation mr-1"></i><span class="hidden sm:inline">Stock bajo</span>
         </button>
@@ -772,15 +807,139 @@
                 <th class="text-right px-3 sm:px-4 py-3 text-slate-500 font-semibold text-xs sm:text-sm">Precio</th>
                 <th class="text-right px-3 sm:px-4 py-3 text-slate-500 font-semibold text-xs sm:text-sm hidden lg:table-cell">Costo</th>
                 <th class="text-right px-3 sm:px-4 py-3 text-slate-500 font-semibold text-xs sm:text-sm hidden lg:table-cell">Utilidad</th>
-                <th class="text-center px-3 sm:px-4 py-3 text-slate-500 font-semibold text-xs sm:text-sm hidden md:table-cell">Stock</th>
+                <th id="prodStockTh" class="text-center px-3 sm:px-4 py-3 text-slate-500 font-semibold text-xs sm:text-sm hidden md:table-cell">Stock</th>
                 <th class="text-center px-3 sm:px-4 py-3 text-slate-500 font-semibold text-xs sm:text-sm hidden sm:table-cell">Estado</th>
                 <th class="text-right px-3 sm:px-4 py-3 text-slate-500 font-semibold text-xs sm:text-sm">Acciones</th>
               </tr>
             </thead>
             <tbody id="prodTableBody" class="divide-y divide-slate-100">
-              <tr><td colspan="5" class="text-center py-10 text-slate-400">Cargando…</td></tr>
+              <tr><td colspan="8" class="text-center py-10 text-slate-400">Cargando…</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+      <p id="prodBranchNote" class="hidden text-xs text-slate-500 mt-2 px-1"></p>
+    </div>
+
+    <!-- ─ CATÁLOGO MAESTRO (SaaS, solo lectura) ─ -->
+    <div id="admin-catalog" class="admin-content hidden p-3 sm:p-5">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <h1 class="text-lg sm:text-xl font-black text-slate-800">🗂️ Catálogo maestro</h1>
+        <span class="flex items-center gap-1.5 text-xs font-semibold bg-white border border-slate-200 rounded-full px-3 py-1.5">
+          <span id="catStatusDot" class="w-2 h-2 rounded-full bg-gray-300 inline-block shrink-0"></span>
+          <span id="catStatusShort" class="text-slate-500">Sin configurar</span>
+        </span>
+      </div>
+      <p class="text-xs text-slate-400 mb-4 leading-relaxed">
+        El <b class="text-slate-600">catálogo maestro</b> de tu SaaS (saas-2c4ef) solo se lee.
+        Cuando se escanea un código que no está en tus productos, el POS lo busca ahí, lo copia a tus productos (tienda-2d9fe)
+        y lo da de alta en el inventario de la <b class="text-slate-600">sucursal donde se escaneó</b>, con 0 piezas.
+      </p>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-4">
+        <div class="bg-white rounded-xl p-3 sm:p-4 border border-slate-200 shadow-sm">
+          <p class="text-[10px] sm:text-xs text-slate-400 mb-1">Productos propios</p>
+          <p id="kpiCatOwn" class="kpi-val text-indigo-600">…</p>
+        </div>
+        <div class="bg-white rounded-xl p-3 sm:p-4 border border-slate-200 shadow-sm">
+          <p class="text-[10px] sm:text-xs text-slate-400 mb-1">Importados del catálogo</p>
+          <p id="kpiCatImported" class="kpi-val text-cyan-600">…</p>
+        </div>
+        <div class="bg-white rounded-xl p-3 sm:p-4 border border-slate-200 shadow-sm">
+          <p class="text-[10px] sm:text-xs text-slate-400 mb-1">Importados sin precio</p>
+          <p id="kpiCatNoPrice" class="kpi-val text-amber-500">…</p>
+          <button onclick="showImportedWithoutPrice()" class="text-[10px] sm:text-xs text-indigo-600 font-semibold mt-0.5">Ver en Productos →</button>
+        </div>
+        <div class="bg-white rounded-xl p-3 sm:p-4 border border-slate-200 shadow-sm">
+          <p class="text-[10px] sm:text-xs text-slate-400 mb-1">Consultas al catálogo hoy</p>
+          <p id="kpiCatReads" class="kpi-val text-slate-600">…</p>
+          <p class="text-[10px] sm:text-xs text-slate-400 mt-0.5">En este dispositivo</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <!-- Conexión -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+          <p class="text-sm font-bold text-slate-700 mb-1"><i class="fa-solid fa-plug text-cyan-600 mr-1.5"></i>Conexión al catálogo</p>
+          <p id="catStatusText" class="text-xs font-semibold mb-3 text-slate-400 break-anywhere">—</p>
+          <div class="space-y-3">
+            <label class="flex items-center justify-between gap-3 cursor-pointer select-none border border-slate-200 rounded-xl p-3">
+              <span class="text-sm font-semibold text-slate-700">Buscar en el catálogo cuando un código no exista en mi inventario</span>
+              <span class="relative inline-block w-12 h-7 shrink-0">
+                <input id="cat_enabled" type="checkbox" checked onchange="markCatDirty()" class="peer sr-only">
+                <span class="absolute inset-0 bg-slate-300 peer-checked:bg-cyan-600 rounded-full transition"></span>
+                <span class="absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow transition peer-checked:translate-x-5"></span>
+              </span>
+            </label>
+            <div>
+              <label class="text-xs font-semibold text-slate-500 mb-1 block">Correo de la cuenta lectora (en saas-2c4ef)</label>
+              <input id="cat_email" type="email" inputmode="email" autocomplete="off" placeholder="lector-tienda@tudominio.com" oninput="markCatDirty()"
+                class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 min-h-[48px]">
+            </div>
+            <div>
+              <label class="text-xs font-semibold text-slate-500 mb-1 block">Contraseña</label>
+              <div class="relative">
+                <input id="cat_pwd" type="password" autocomplete="new-password" placeholder="Contraseña de la cuenta lectora" oninput="markCatDirty()"
+                  class="w-full border border-slate-200 rounded-xl pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 min-h-[48px]">
+                <button type="button" tabindex="-1" onclick="togglePwd('cat_pwd','catPwdIcon')" aria-label="Mostrar contraseña"
+                  class="absolute right-1 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-slate-400 hover:text-cyan-600 rounded-lg transition">
+                  <i id="catPwdIcon" class="fa-solid fa-eye text-base"></i>
+                </button>
+              </div>
+            </div>
+            <details class="border border-slate-200 rounded-xl px-3 py-2">
+              <summary class="text-xs font-semibold text-slate-500 cursor-pointer select-none py-1">Opciones avanzadas</summary>
+              <div class="grid grid-cols-2 gap-2 mt-2 mb-1">
+                <div>
+                  <label class="text-[11px] font-semibold text-slate-500 mb-1 block">Colección</label>
+                  <input id="cat_collection" type="text" value="productos" oninput="markCatDirty()"
+                    class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 min-h-[40px]">
+                </div>
+                <div>
+                  <label class="text-[11px] font-semibold text-slate-500 mb-1 block">Campo del código</label>
+                  <input id="cat_field" type="text" list="catFieldList" value="auto" oninput="markCatDirty()"
+                    class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 min-h-[40px]">
+                  <datalist id="catFieldList">
+                    <option value="auto"><option value="docid"><option value="codigo"><option value="codigo_barras">
+                    <option value="barcode"><option value="ean"><option value="sku">
+                  </datalist>
+                </div>
+              </div>
+              <p class="text-[10px] text-slate-400 mb-1"><b>auto</b> = lo detecta solo. <b>docid</b> = el ID del documento es el código de barras.</p>
+            </details>
+            <p id="cat_modeLine" class="text-[11px] text-cyan-800 bg-cyan-50 border border-cyan-100 rounded-lg px-3 py-2"></p>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              Crea esta cuenta en Firebase → <b>saas-2c4ef</b> → Authentication → Agregar usuario, y <b>no la agregues a ningún negocio</b>: así solo puede leer el catálogo.
+              Se guarda en tu Firestore (settings) para que las cajas de tus vendedores se conecten solas.
+            </p>
+            <div class="flex gap-2">
+              <button id="catSaveBtn" onclick="saveCatalogSettings()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-sm min-h-[48px]">
+                <i class="fa-solid fa-floppy-disk mr-1.5"></i>Guardar y conectar
+              </button>
+              <button onclick="testCatalog()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3 rounded-xl font-semibold text-sm min-h-[48px]">
+                <i class="fa-solid fa-vial mr-1"></i>Probar
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Buscar / importar -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+          <p class="text-sm font-bold text-slate-700 mb-1"><i class="fa-solid fa-magnifying-glass text-cyan-600 mr-1.5"></i>Buscar en el catálogo</p>
+          <p class="text-xs text-slate-400 mb-3">Consulta un código sin venderlo, revisa qué trae el catálogo e impórtalo con tu precio y costo.</p>
+          <div class="flex gap-2">
+            <input id="cat_code" type="text" inputmode="numeric" autocomplete="off" placeholder="Código de barras…"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();catalogManualLookup();}"
+              class="flex-1 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 min-h-[48px]">
+            <button onclick="catalogManualLookup()" class="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-3 rounded-xl min-w-[48px] min-h-[48px]">
+              <i class="fa-solid fa-magnifying-glass"></i>
+            </button>
+          </div>
+          <div id="catPreview" class="mt-3"></div>
+          <div class="border-t border-slate-100 mt-4 pt-3">
+            <p class="text-xs font-bold text-slate-500 mb-2">Producto de ejemplo del catálogo</p>
+            <div id="catSample"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -834,7 +993,7 @@
                   <th class="text-right px-3 py-3 text-slate-500 font-semibold text-xs">Costo unit.</th>
                   <th class="text-right px-3 py-3 text-slate-500 font-semibold text-xs">Total</th>
                   <th class="text-left px-3 py-3 text-slate-500 font-semibold text-xs">Caducidad</th>
-                  <th class="text-left px-3 py-3 text-slate-500 font-semibold text-xs hidden md:table-cell">Registró</th>
+                  <th class="text-left px-3 py-3 text-slate-500 font-semibold text-xs hidden md:table-cell">Sucursal · registró</th>
                 </tr>
               </thead>
               <tbody id="entriesTableBody" class="divide-y divide-slate-100">
@@ -1113,7 +1272,8 @@
           <i class="fa-solid fa-plus"></i><span class="hidden sm:inline">Agregar sucursal</span>
         </button>
       </div>
-      <p class="text-xs text-slate-400 mb-3">Cada vendedor pertenece a una sucursal. Las ventas quedan etiquetadas con la sucursal de quien cobra, para poder filtrar métricas e historial por sucursal.</p>
+      <p class="text-xs text-slate-400 mb-3">Cada sucursal tiene su propio inventario y su propio stock: lo que se vende o entra en una sucursal solo mueve las existencias de esa sucursal. Los datos del producto (nombre, código, precio y costo) son los mismos en todas. Cada vendedor pertenece a una sucursal; el administrador elige en cuál está cobrando tocando el nombre de la sucursal en la barra superior.</p>
+      <div id="legacyStockBranchNotice" class="hidden bg-amber-50 border border-amber-300 rounded-xl p-4 mb-3"></div>
       <div id="branchesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div class="col-span-3 text-center py-10 text-slate-400">Cargando…</div>
       </div>
@@ -1291,6 +1451,7 @@
         </label>
         <div class="flex gap-2">
           <input id="pf_barcode" type="text" inputmode="numeric" placeholder="Opcional (se generará uno corto)"
+            onchange="prefillFromCatalog()" onkeydown="if(event.key==='Enter'){event.preventDefault();prefillFromCatalog();}"
             class="flex-1 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[48px]">
           <button onclick="startProductScan()" class="bg-indigo-100 hover:bg-indigo-200 active:bg-indigo-300 text-indigo-700 px-4 py-3 rounded-xl transition min-w-[48px] min-h-[48px]">
             <i class="fa-solid fa-camera"></i>
@@ -1299,23 +1460,31 @@
         <div id="pf_scanArea" class="hidden mt-2 rounded-xl overflow-hidden" style="height:200px">
           <div id="pf_scanReader" style="width:100%;height:100%;background:#000"></div>
         </div>
+        <p id="pf_catalogHint" class="hidden text-[11px] mt-1.5 px-2.5 py-1.5 rounded-lg"></p>
       </div>
       <div>
         <label class="text-xs font-semibold text-slate-500 mb-1 block">Nombre *</label>
         <input id="pf_name" type="text" placeholder="Ej: Coca-Cola 600ml"
           class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[48px]">
       </div>
-      <div class="grid grid-cols-2 gap-3">
+      <div id="pf_priceStockGrid" class="grid grid-cols-2 gap-3">
         <div>
           <label class="text-xs font-semibold text-slate-500 mb-1 block">Precio *</label>
           <input id="pf_price" type="number" inputmode="decimal" placeholder="0.00" min="0" step="0.01" oninput="updateMarginHint()"
             class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[48px]">
         </div>
-        <div>
+        <div id="pf_stockLegacy">
           <label class="text-xs font-semibold text-slate-500 mb-1 block">Stock</label>
-          <input id="pf_stock" type="number" inputmode="numeric" placeholder="0" min="0"
+          <input id="pf_stock" type="number" inputmode="decimal" step="any" placeholder="0" min="0"
             class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[48px]">
         </div>
+      </div>
+      <!-- Existencias por sucursal (cuando hay sucursales) -->
+      <div id="pf_stockBranches" class="hidden border border-violet-200 bg-violet-50/40 rounded-xl p-3">
+        <p class="text-xs font-bold text-violet-800"><i class="fa-solid fa-store mr-1"></i>Existencias por sucursal</p>
+        <p class="text-[11px] text-violet-700/70 mb-2">Déjala vacía si esa sucursal no maneja este producto.</p>
+        <div id="pf_stockBranchInputs" class="grid grid-cols-2 gap-2"></div>
+        <p id="pf_stockLegacyNote" class="hidden text-[11px] text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1.5 mt-2"></p>
       </div>
       <!-- Precio de adquisición: SOLO ADMIN -->
       <div id="pf_costRow" class="hidden bg-amber-50/50 border border-amber-200 rounded-xl p-3">
@@ -1370,6 +1539,11 @@
     </div>
 
     <div class="space-y-3">
+      <div id="ie_branchRow" class="hidden">
+        <label class="text-xs font-semibold text-slate-500 mb-1 block"><i class="fa-solid fa-store text-violet-500 mr-1"></i>¿A qué sucursal llega la mercancía?</label>
+        <select id="ie_branch" onchange="onEntryBranchChange()"
+          class="w-full border border-violet-200 bg-violet-50/50 rounded-xl px-4 py-3 text-sm font-semibold text-violet-800 focus:outline-none focus:ring-2 focus:ring-violet-400 min-h-[48px]"></select>
+      </div>
       <div>
         <label class="text-xs font-semibold text-slate-500 mb-1 block">Escanea o escribe el código del producto</label>
         <div class="flex gap-2">
@@ -1389,9 +1563,14 @@
         <p class="text-[11px] text-slate-400 mt-1">También funciona con tu lector USB/Bluetooth: escanea con el campo enfocado.</p>
       </div>
 
+      <p id="ie_loading" class="hidden text-xs text-cyan-700 bg-cyan-50 border border-cyan-100 rounded-xl px-3 py-2.5">
+        <i class="fa-solid fa-spinner fa-spin mr-1.5"></i>No está en tu inventario · buscando en el catálogo maestro…
+      </p>
+
       <div id="ie_notFound" class="hidden bg-red-50 border border-red-200 rounded-xl p-3 text-center">
         <p class="text-sm font-bold text-red-700">Ese producto no existe todavía</p>
         <p class="text-xs text-red-500 mt-0.5">Las entradas son solo para productos ya registrados.</p>
+        <p id="ie_notFoundHint" class="hidden text-[11px] text-slate-500 mt-1"></p>
         <button onclick="createFromEntry()" class="mt-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-2 rounded-lg min-h-[36px]">
           <i class="fa-solid fa-plus mr-1"></i>Crear producto nuevo
         </button>
@@ -1402,7 +1581,7 @@
         <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
           <p id="ie_prodName" class="font-black text-slate-800 text-sm leading-tight"></p>
           <div class="flex flex-wrap gap-2 mt-1.5 text-[11px]">
-            <span class="bg-white border border-emerald-200 text-slate-600 px-2 py-0.5 rounded-full">Stock actual: <b id="ie_curStock">0</b></span>
+            <span class="bg-white border border-emerald-200 text-slate-600 px-2 py-0.5 rounded-full"><span id="ie_stockLabel">Stock actual:</span> <b id="ie_curStock">0</b></span>
             <span class="bg-white border border-emerald-200 text-slate-600 px-2 py-0.5 rounded-full">Precio venta: <b id="ie_curPrice">$0</b></span>
             <span class="bg-white border border-emerald-200 text-slate-600 px-2 py-0.5 rounded-full">Costo actual: <b id="ie_curCost">—</b></span>
           </div>
@@ -1788,7 +1967,10 @@
 <div id="stockAlertsModal" class="hidden fixed inset-0 z-[65] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4">
   <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl p-5 sm:p-6 w-full sm:max-w-md sheet overflow-y-auto">
     <div class="flex items-center justify-between mb-4">
-      <h3 class="font-bold text-slate-800 text-lg"><i class="fa-solid fa-bell text-amber-500 mr-1.5"></i>Alertas de stock</h3>
+      <div class="min-w-0">
+        <h3 class="font-bold text-slate-800 text-lg"><i class="fa-solid fa-bell text-amber-500 mr-1.5"></i>Alertas de stock</h3>
+        <p id="stockAlertsBranch" class="hidden text-xs text-violet-600 font-semibold truncate"></p>
+      </div>
       <button onclick="hideStockAlerts()" class="text-slate-400 hover:text-slate-600 p-1 min-w-[36px] min-h-[36px] flex items-center justify-center"><i class="fa-solid fa-xmark text-xl"></i></button>
     </div>
     <div id="stockAlertsList" class="space-y-2"></div>
@@ -1989,6 +2171,9 @@ function subscribeProducts(){
     refreshCategoryList();
     updateStockBell();
     if(g('admin-products') && !g('admin-products').classList.contains('hidden')) filterProdTable();
+    if(g('admin-branches') && !g('admin-branches').classList.contains('hidden')) renderBranches();
+    renderLegacyStockNotice();
+    renderCatalogKpis();
   }, err => console.warn('Products snapshot error:', err));
 }
 
@@ -2006,8 +2191,8 @@ function renderQuickProducts(){
   const card=g('quickProdsCard'), grid=g('quickProdsGrid');
   if(!card||!grid) return;
   if(!(S.isSeller||S.isAdmin) || !S.products.length){ card.classList.add('hidden'); return; }
-  const favs = S.products.filter(p=>p.favorite && p.active!==false);
-  const bySales = [...S.products].filter(p=>p.active!==false && !p.favorite).sort((a,b)=>(b.salesCount||0)-(a.salesCount||0));
+  const favs = S.products.filter(p=>p.favorite && p.active!==false && carriedIn(p));
+  const bySales = [...S.products].filter(p=>p.active!==false && !p.favorite && carriedIn(p)).sort((a,b)=>(b.salesCount||0)-(a.salesCount||0));
   const list = [...favs, ...bySales].slice(0,10);
   if(!list.length){ card.classList.add('hidden'); return; }
   card.classList.remove('hidden');
@@ -2026,11 +2211,79 @@ function quickAdd(barcode){
   addToCart();
 }
 
+/* ════════════════════════════════════════════════════════════════
+   INVENTARIO POR SUCURSAL
+   Los datos del producto (nombre, código, precio, costo) son de toda la
+   tienda; las EXISTENCIAS son de cada sucursal:
+       products/{código}.branchStock = { <idSucursal>: piezas, … }
+   Un producto está en el inventario de una sucursal si tiene su entrada en
+   branchStock (aunque sea 0). Si no hay sucursales dadas de alta, se usa el
+   campo viejo `stock` igual que antes.
+════════════════════════════════════════════════════════════════ */
+const BRANCH_KEY = 'posActiveBranch_v1';
+const round3 = n => Math.round((Number(n)||0)*1000)/1000;
+function activeBranches(){ return S.branches.filter(b=>b.active!==false); }
+function branchName(id){
+  if(!id) return '';
+  return S.branches.find(b=>b.id===id)?.name || (id===S.userBranchId ? (S.userBranchName||'') : '');
+}
+/* Sucursal en la que se está trabajando: la del vendedor, o la que eligió el admin */
+function curBranchId(){
+  if(!S.user) return null;
+  if(!S.isAdmin) return S.userBranchId || null;
+  const list=activeBranches();
+  if(!list.length) return null;
+  let id=S.adminBranchId;
+  if(!id){ try{ id=localStorage.getItem(BRANCH_KEY); }catch(e){} }
+  if(!list.some(b=>b.id===id)) id=list[0].id;
+  S.adminBranchId=id;
+  return id;
+}
+function curBranchName(){ const id=curBranchId(); return id ? (branchName(id)||null) : null; }
+function hasBranchMap(p){ return !!p.branchStock && Object.keys(p.branchStock).length>0; }
+/* Existencias de un producto en una sucursal (undefined = no se maneja ahí) */
+function stockOf(p, bId=curBranchId()){
+  if(!p) return undefined;
+  if(bId){ const v=p.branchStock?.[bId]; return typeof v==='number' ? v : undefined; }
+  return typeof p.stock==='number' ? p.stock : undefined;
+}
+/* ¿El producto está en el inventario de esa sucursal? Los productos de antes de
+   separar por sucursal (sin branchStock) se ven en todas hasta asignarlos. */
+function carriedIn(p, bId=curBranchId()){
+  if(!bId || !hasBranchMap(p)) return true;
+  return Object.prototype.hasOwnProperty.call(p.branchStock, bId);
+}
+function isLegacyStock(p){ return typeof p.stock==='number'; }
+/* Para update(): ruta del campo de existencias de esa sucursal */
+function stockField(bId){ return bId ? 'branchStock.'+bId : 'stock'; }
+/* Para set(...,{merge:true}): objeto anidado (set NO interpreta "a.b" como ruta) */
+function stockSetPatch(bId, value){ return bId ? {branchStock:{[bId]:value}} : {stock:value}; }
+function fmtQty(n){ return String(round3(n)); }
+
+function setActiveBranch(id){
+  if(!S.isAdmin || !activeBranches().some(b=>b.id===id)) return;
+  S.adminBranchId=id;
+  try{ localStorage.setItem(BRANCH_KEY,id); }catch(e){}
+  onBranchContextChanged();
+  showToast('Trabajando en: '+branchName(id),'info');
+}
+function onBranchContextChanged(){
+  updateBranchTag(); updateStockBell(); renderQuickProducts();
+  if(S.curProduct && !g('stateProduct').classList.contains('hidden')){
+    const fresh=S.products.find(p=>p.barcode===S.curProduct.barcode) || S.curProduct;
+    showProduct(fresh,{quiet:true});
+  }
+}
+
 /* ════════════════════════════════════
    LOW STOCK ALERT BELL
 ════════════════════════════════════ */
-function getLowStockProducts(){
-  return S.products.filter(p=>p.active!==false && typeof p.stock==='number' && p.stock<=LOW_STOCK_THRESHOLD);
+function getLowStockProducts(bId=curBranchId()){
+  return S.products.filter(p=>{
+    if(p.active===false || !carriedIn(p,bId)) return false;
+    const s=stockOf(p,bId);
+    return typeof s==='number' && s<=LOW_STOCK_THRESHOLD;
+  });
 }
 function updateStockBell(){
   const bell=g('stockBell'), count=g('stockBellCount');
@@ -2044,8 +2297,10 @@ function updateStockBell(){
   } else count.classList.add('hidden');
 }
 function openStockAlerts(){
-  const list=getLowStockProducts().sort((a,b)=>(a.stock||0)-(b.stock||0));
+  const list=getLowStockProducts().sort((a,b)=>(stockOf(a)||0)-(stockOf(b)||0));
   const el=g('stockAlertsList');
+  const sub=g('stockAlertsBranch');
+  if(sub){ const n=curBranchName(); sub.textContent=n?'Sucursal: '+n:''; sub.classList.toggle('hidden',!n); }
   el.innerHTML = list.length ? list.map(p=>`
     <div class="flex items-center justify-between gap-2 border border-slate-200 rounded-xl p-3">
       <div class="min-w-0">
@@ -2067,7 +2322,9 @@ function subscribeBranches(){
     S.branches = snap.docs.map(d=>({id:d.id,...d.data()}));
     refreshBranchSelects();
     if(g('admin-branches') && !g('admin-branches').classList.contains('hidden')) renderBranches();
-    updateBranchTag();
+    if(g('admin-products') && !g('admin-products').classList.contains('hidden')) filterProdTable();
+    onBranchContextChanged();
+    renderLegacyStockNotice();
   }, err=>console.warn('Branches snapshot error:', err));
 }
 function refreshBranchSelects(){
@@ -2077,12 +2334,33 @@ function refreshBranchSelects(){
   const rf=g('rf_branch'); if(rf) rf.innerHTML=opts;
   const hf=g('histBranchFilter'); if(hf) hf.innerHTML='<option value="">Todas las sucursales</option>'+opts;
   const mf=g('metricsBranchFilter'); if(mf) mf.innerHTML='<option value="">Todas las sucursales</option>'+opts;
+  /* Vista de Productos: una sucursal o todas */
+  const pv=g('prodBranchView');
+  if(pv){
+    const prev=pv.value;
+    pv.innerHTML=opts+(active.length>1?'<option value="*">Todas las sucursales</option>':'');
+    pv.value = (prev==='*' && active.length>1) || active.some(b=>b.id===prev) ? prev : (curBranchId()||'');
+    g('prodBranchRow')?.classList.toggle('hidden', !active.length);
+  }
+  /* Entrada de inventario: a qué sucursal entra */
+  const ib=g('ie_branch');
+  if(ib){ const prev=ib.value; ib.innerHTML=opts; ib.value=active.some(b=>b.id===prev)?prev:(curBranchId()||''); }
+  const lb=g('legacyBranchSel');
+  if(lb){ const prev=lb.value; lb.innerHTML=opts; if(active.some(b=>b.id===prev)) lb.value=prev; }
 }
 function renderBranches(){
   const grid=g('branchesGrid');
   if(!S.branches.length){grid.innerHTML='<div class="col-span-3 py-12 text-center"><p class="text-slate-400 text-sm">No hay sucursales todavía</p><button onclick="showBranchModal()" class="mt-3 text-indigo-600 text-sm font-medium min-h-[44px] block mx-auto">+ Agregar primero</button></div>';return;}
+  renderLegacyStockNotice();
   grid.innerHTML=S.branches.map(b=>{
     const sellerCount = S.allSellers.filter(s=>s.branchId===b.id).length;
+    /* Inventario propio de la sucursal */
+    let nProd=0, units=0, low=0;
+    S.products.forEach(p=>{
+      if(p.active===false || !p.branchStock || !Object.prototype.hasOwnProperty.call(p.branchStock,b.id)) return;
+      const s=Number(p.branchStock[b.id])||0;
+      nProd++; units+=Math.max(0,s); if(s<=LOW_STOCK_THRESHOLD) low++;
+    });
     return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-5">
     <div class="flex items-start justify-between mb-2">
       <div class="w-11 h-11 rounded-full bg-violet-100 flex items-center justify-center shrink-0">
@@ -2094,7 +2372,13 @@ function renderBranches(){
     <p class="font-bold text-slate-800 text-sm">${esc(b.name)}</p>
     <p class="text-slate-400 text-xs mt-0.5 truncate">${esc(b.address||'Sin dirección registrada')}</p>
     <p class="text-slate-400 text-xs mt-1"><i class="fa-solid fa-users mr-1"></i>${sellerCount} vendedor${sellerCount!==1?'es':''}</p>
-    <div class="flex gap-1.5 mt-3">
+    <div class="grid grid-cols-3 gap-1.5 mt-3 text-center">
+      <div class="bg-slate-50 rounded-lg py-1.5"><p class="text-sm font-black text-slate-700 num">${nProd}</p><p class="text-[10px] text-slate-400">productos</p></div>
+      <div class="bg-slate-50 rounded-lg py-1.5"><p class="text-sm font-black text-slate-700 num">${fmtQty(units)}</p><p class="text-[10px] text-slate-400">piezas</p></div>
+      <div class="${low?'bg-amber-50':'bg-slate-50'} rounded-lg py-1.5"><p class="text-sm font-black ${low?'text-amber-600':'text-slate-700'} num">${low}</p><p class="text-[10px] text-slate-400">stock bajo</p></div>
+    </div>
+    <button onclick="viewBranchInventory('${b.id}')" class="w-full mt-2 text-xs py-2.5 rounded-lg font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-600 min-h-[40px]"><i class="fa-solid fa-boxes-stacked mr-1"></i>Ver inventario de esta sucursal</button>
+    <div class="flex gap-1.5 mt-1.5">
       <button onclick="editBranch('${b.id}')" class="flex-1 text-xs py-2.5 rounded-lg font-semibold bg-slate-100 hover:bg-slate-200 text-slate-600 min-h-[40px]"><i class="fa-solid fa-pen-to-square mr-1"></i>Editar</button>
       <button onclick="toggleBranch('${b.id}',${b.active!==false})" class="flex-1 text-xs py-2.5 rounded-lg font-semibold min-h-[40px] ${b.active!==false?'bg-red-50 text-red-600 hover:bg-red-100':'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}">
         <i class="fa-solid fa-${b.active!==false?'ban':'check'} mr-1"></i>${b.active!==false?'Desactivar':'Activar'}
@@ -2142,13 +2426,105 @@ async function toggleBranch(id,active){
   catch(e){ showToast('Error: '+e.message,'error'); }
 }
 function updateBranchTag(){
-  const tag=g('branchTag'), nameEl=g('branchTagName');
+  const tag=g('branchTag'), nameEl=g('branchTagName'), sel=g('navBranchSelect'), chev=g('branchTagChevron');
   if(!tag) return;
-  if(S.isSeller && S.userBranchName){
-    nameEl.textContent=S.userBranchName;
-    tag.classList.remove('hidden'); tag.classList.add('flex');
-  } else {
-    tag.classList.add('hidden'); tag.classList.remove('flex');
+  const id=curBranchId();
+  const name=id ? (branchName(id)||'Sucursal') : '';
+  if(name){ nameEl.textContent=name; tag.classList.remove('hidden'); tag.classList.add('flex'); }
+  else    { tag.classList.add('hidden'); tag.classList.remove('flex'); }
+  /* El admin elige en qué sucursal está cobrando (si hay más de una) */
+  const list=activeBranches();
+  const canPick=S.isAdmin && list.length>1;
+  if(sel){
+    sel.classList.toggle('hidden', !canPick);
+    if(canPick){ sel.innerHTML=list.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join(''); sel.value=id; }
+  }
+  if(chev) chev.classList.toggle('hidden', !canPick);
+  tag.title = canPick ? 'Sucursal en la que estás trabajando (toca para cambiar)' : 'Sucursal';
+}
+function viewBranchInventory(id){
+  switchTab('products');
+  const pv=g('prodBranchView'); if(pv) pv.value=id;
+  filterProdTable();
+}
+
+/* ── Stock de antes de separar por sucursal → asignarlo a una sucursal ── */
+function legacyStockProducts(){ return S.products.filter(isLegacyStock); }
+function renderLegacyStockNotice(){
+  const list=legacyStockProducts();
+  const branches=activeBranches();
+  const show=S.isAdmin && list.length>0 && branches.length>0;
+  const units=list.reduce((a,p)=>a+Math.max(0,p.stock||0),0);
+  /* Aviso corto en Productos */
+  const pn=g('legacyStockProdNotice');
+  if(pn){
+    pn.classList.toggle('hidden', !show);
+    if(show) pn.innerHTML=`<i class="fa-solid fa-triangle-exclamation mr-1.5"></i><b>${list.length} productos</b> (${fmtQty(units)} piezas) tienen existencias de antes de separar por sucursal.
+      <button onclick="switchTab('branches')" class="font-bold underline ml-1">Asignarlas a una sucursal</button>`;
+  }
+  /* Formulario completo en Sucursales */
+  const bn=g('legacyStockBranchNotice');
+  if(!bn) return;
+  bn.classList.toggle('hidden', !show);
+  if(!show){ bn.innerHTML=''; return; }
+  const prev=g('legacyBranchSel')?.value;
+  bn.innerHTML=`
+    <p class="text-sm font-bold text-amber-900"><i class="fa-solid fa-boxes-packing mr-1.5"></i>Stock sin sucursal</p>
+    <p class="text-xs text-amber-800 mt-1 leading-relaxed"><b>${list.length} productos</b> (${fmtQty(units)} piezas) tienen las existencias que capturaste antes de separar el inventario por sucursal.
+      Elige a qué sucursal pertenecen. Las demás sucursales empiezan sin esos productos, o con 0 piezas si marcas la casilla, y llenas su stock con Entradas o editando el producto.</p>
+    <div class="flex flex-wrap items-center gap-2 mt-3">
+      <select id="legacyBranchSel" class="border border-amber-300 rounded-lg px-3 py-2 text-sm bg-white min-h-[40px]">
+        ${branches.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')}
+      </select>
+      ${branches.length>1?`<label class="flex items-center gap-2 text-xs text-amber-900 select-none">
+        <input id="legacyAlsoOthers" type="checkbox" class="accent-amber-600 w-4 h-4">Dar de alta los mismos productos con 0 piezas en las demás sucursales
+      </label>`:''}
+      <button id="legacyMigrateBtn" onclick="migrateLegacyStock()" class="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-4 py-2.5 rounded-lg min-h-[40px]">
+        <i class="fa-solid fa-check mr-1"></i>Asignar
+      </button>
+    </div>`;
+  if(prev && branches.some(b=>b.id===prev)) g('legacyBranchSel').value=prev;
+}
+async function migrateLegacyStock(){
+  if(!S.isAdmin) return;
+  const bId=g('legacyBranchSel')?.value;
+  const branch=activeBranches().find(b=>b.id===bId);
+  if(!branch){ showToast('Elige la sucursal','warning'); return; }
+  const others=g('legacyAlsoOthers')?.checked ? activeBranches().filter(b=>b.id!==bId) : [];
+  const list=legacyStockProducts();
+  if(!list.length) return;
+  const units=list.reduce((a,p)=>a+(p.stock||0),0);
+  const ok=await confirmAction({
+    title:`¿Asignar a ${branch.name}?`,
+    msg:`${list.length} productos (${fmtQty(units)} piezas) pasarán a ser existencias de ${branch.name}.`+(others.length?` En ${others.map(o=>o.name).join(', ')} quedarán dados de alta con 0 piezas.`:''),
+    okLabel:'Asignar', icon:'📦'
+  });
+  if(!ok) return;
+  const btn=g('legacyMigrateBtn'); if(btn) btn.disabled=true;
+  let done=0;
+  try{
+    for(let i=0;i<list.length;i+=400){
+      const batch=db.batch();
+      list.slice(i,i+400).forEach(p=>{
+        /* increment: si ya tenía ventas en esa sucursal, se suman en vez de pisarse */
+        const upd={
+          [stockField(bId)]: FS.FieldValue.increment(p.stock||0),
+          stock: FS.FieldValue.delete(),
+          stockAssignedAt: FS.FieldValue.serverTimestamp(),
+        };
+        others.forEach(o=>{ upd[stockField(o.id)]=FS.FieldValue.increment(0); });
+        batch.update(db.collection('products').doc(p.barcode), upd);
+      });
+      await withTimeout(batch.commit(), 30000);
+      done+=Math.min(400, list.length-i);
+    }
+    showToast(`Listo: ${done} productos asignados a ${branch.name} ✅`,'success');
+    await loadProducts();
+  }catch(e){
+    showToast((e.message==='timeout'?'Se está guardando, revisa en un momento':'Error: '+e.message)+(done?` (${done} ya asignados)`:''),'warning');
+  }finally{
+    if(btn) btn.disabled=false;
+    renderLegacyStockNotice(); renderBranches();
   }
 }
 function openReassignBranch(uid,name){
@@ -2330,6 +2706,7 @@ auth.onAuthStateChanged(async user => {
     g('hwBtn').classList.remove('hidden');
     restoreLocalCart();
     checkCurrentShift();
+    subscribeCatalogSettings();   // catálogo maestro del SaaS
     if(S.isAdmin){
       tag.textContent='🔐 Admin';
       tag.className='text-[10px] sm:text-xs bg-yellow-400 text-yellow-900 font-bold px-2 py-0.5 rounded-full';
@@ -2352,10 +2729,14 @@ auth.onAuthStateChanged(async user => {
     tag.className='text-[10px] sm:text-xs bg-white/15 border border-white/20 px-2 py-0.5 rounded-full';
     showCart(false);
     g('adminPanel').classList.add('hidden');
+    stopCatalog();
   }
   renderQuickProducts();
   updateStockBell();
   updateBranchTag();
+  renderLegacyStockNotice();
+  if(S.isSeller && !S.userBranchId && S.branches.length)
+    showToast('Tu usuario no tiene sucursal asignada: tus ventas no descontarán stock de ninguna sucursal. Pide al administrador que te asigne una.','warning');
 });
 
 function showCart(on){
@@ -2470,19 +2851,23 @@ function selectFromDropdown(barcode) {
   g('searchInput').value = barcode; doSearch(barcode);
 }
 document.addEventListener('click', e => { if(!e.target.closest('#searchWrapper')) g('searchDropdown')?.classList.add('hidden'); });
+let _searchSeq = 0;   // evita que una búsqueda lenta pise a una más reciente
+function setLoadingText(t){ const el=g('stateLoadingText'); if(el) el.textContent=t; }
 async function doSearch(queryOverride){
   const raw = (queryOverride || g('searchInput').value).trim();
   if(!raw) return;
+  const seq = ++_searchSeq;
 
   hide('stateWelcome'); hide('stateProduct'); hide('stateNotFound'); hide('stateLoading');
+  setLoadingText('Buscando producto…');
   show('stateLoading');
 
   /* If products not loaded yet, wait for snapshot */
   if(!S.products.length){
     await new Promise(res=>setTimeout(res,800));
   }
+  if(seq !== _searchSeq) return;
 
-  hide('stateLoading');
   const q = raw.toLowerCase();
 
   /* 1. Exact barcode */
@@ -2497,16 +2882,41 @@ async function doSearch(queryOverride){
   }
 
   /* 3. If still not found, try direct Firestore lookup (catches barcode not yet in cache) */
-  if(!match){
+  let localExists = false;
+  if(!match && !raw.includes('/')){
     try{
       const doc = await db.collection('products').doc(raw).get();
-      if(doc.exists && doc.data().active !== false)
-        match = {barcode:doc.id,...doc.data()};
+      if(doc.exists){
+        localExists = true;
+        if(doc.data().active !== false) match = {barcode:doc.id,...doc.data()};
+      }
     }catch(e){}
   }
 
+  /* 4. Catálogo maestro: SOLO si el código no existe en mis productos,
+        se busca en el catálogo maestro del SaaS y se copia a mi Firestore. */
+  let hint = '';
+  if(!match && localExists){
+    hint = 'Ese código está en tu inventario, pero el producto está desactivado.';
+  } else if(!match && S.user && !window._phoneMode && looksLikeCode(raw) && SC.cfg.enabled !== false){
+    /* (en modo escáner remoto la caja es la que consulta el catálogo, no el celular) */
+    if(!catalogConfigured()){
+      hint = S.isAdmin ? 'Para buscarlo también en el catálogo maestro, configúralo en Admin → Catálogo maestro.' : '';
+    } else if(!isOnline()){
+      hint = 'Sin conexión: no se pudo buscar en el catálogo maestro.';
+    } else {
+      if(seq === _searchSeq) setLoadingText('No está en tu inventario · buscando en el catálogo maestro…');
+      try{
+        match = await importFromCatalog(raw);
+        if(!match) hint = 'Tampoco está en el catálogo maestro.';
+      }catch(e){ hint = e.message || 'No se pudo consultar el catálogo maestro.'; }
+    }
+  }
+
+  if(seq !== _searchSeq) return;
+  hide('stateLoading');
   if(match) showProduct(match);
-  else showNotFound(raw);
+  else showNotFound(raw, hint);
 }
 
 window._bulkUnit = 'kg';
@@ -2522,7 +2932,7 @@ function setBulkUnit(unit) {
   qtyInp.focus();
 }
 
-function showProduct(p){
+function showProduct(p, opts={}){
   S.curProduct = p;
   g('pdBarcode').textContent = 'Cód: '+p.barcode;
   g('pdName').textContent = p.name;
@@ -2545,18 +2955,43 @@ function showProduct(p){
     qtyInp.placeholder = '';
   }
   
+  /* Existencias de ESTA sucursal */
   const stockEl = g('pdStock');
-  if(typeof p.stock === 'number'){
+  const bId = curBranchId();
+  const st = stockOf(p, bId);
+  const badge = 'text-xs px-2 py-0.5 rounded-full inline-block ml-1 ';
+  if(typeof st === 'number'){
     stockEl.classList.remove('hidden');
-    if(p.stock<=0){ stockEl.textContent='Sin stock'; stockEl.className='text-xs px-2 py-0.5 rounded-full inline-block ml-1 badge-low'; }
-    else if(p.stock<=LOW_STOCK_THRESHOLD){ stockEl.textContent=p.stock+' en stock'; stockEl.className='text-xs px-2 py-0.5 rounded-full inline-block ml-1 badge-mid'; }
-    else { stockEl.textContent=p.stock+' en stock'; stockEl.className='text-xs px-2 py-0.5 rounded-full inline-block ml-1 badge-ok'; }
+    if(st<=0){ stockEl.textContent='Sin stock'; stockEl.className=badge+'badge-low'; }
+    else if(st<=LOW_STOCK_THRESHOLD){ stockEl.textContent=fmtQty(st)+' en stock'; stockEl.className=badge+'badge-mid'; }
+    else { stockEl.textContent=fmtQty(st)+' en stock'; stockEl.className=badge+'badge-ok'; }
+  } else if(bId && S.user){
+    stockEl.classList.remove('hidden');
+    stockEl.textContent = carriedIn(p,bId) && isLegacyStock(p) ? 'Stock sin asignar a sucursal' : 'No registrado en esta sucursal';
+    stockEl.className = badge+'badge-mid';
   } else stockEl.classList.add('hidden');
+
+  /* ¿Hay en otras sucursales? (útil cuando aquí se acabó) */
+  const other = g('pdOtherStock');
+  const others = (S.user && bId) ? activeBranches().filter(b=>b.id!==bId && (stockOf(p,b.id)||0)>0) : [];
+  other.innerHTML = others.length ? '<i class="fa-solid fa-store mr-1"></i>Otras sucursales: '+others.map(b=>`${esc(b.name)} <b>${fmtQty(stockOf(p,b.id))}</b>`).join(' · ') : '';
+  other.classList.toggle('hidden', !others.length);
+
+  /* Origen (catálogo maestro) y aviso de precio pendiente */
+  g('pdSource').classList.toggle('hidden', p.source !== 'saas');
+  const noPrice = !!p.needsPrice;
+  g('pdNoPrice').classList.toggle('hidden', !noPrice);
+  g('pdSetPriceBtn').classList.toggle('hidden', !(noPrice && S.isAdmin));
+  if(noPrice) g('pdPrice').textContent = 'Sin precio';
+
   show('stateProduct'); hide('stateNotFound'); hide('stateWelcome'); hide('stateLoading');
-  beep('scan');
+  if(!opts.quiet) beep('scan');
 }
-function showNotFound(code){
+function editCurrentProduct(){ if(S.curProduct) editProduct(S.curProduct.barcode); }
+function showNotFound(code, hint=''){
   g('notFoundCode').textContent = 'Código: '+code;
+  const h = g('notFoundHint');
+  h.textContent = hint; h.classList.toggle('hidden', !hint);
   show('stateNotFound'); hide('stateProduct'); hide('stateWelcome'); hide('stateLoading');
   const btn = g('addFromScanBtn');
   if(S.isAdmin){ btn.classList.remove('hidden'); window._pendingBarcode=code; }
@@ -2568,7 +3003,12 @@ function showNotFound(code){
 ════════════════════════════════════ */
 function addToCart(){
   if(!S.curProduct) return;
-  
+  if(S.curProduct.needsPrice){
+    showToast(S.isAdmin ? 'Asigna un precio antes de vender este producto' : 'Este producto aún no tiene precio. Pide al administrador que lo asigne.','warning');
+    beep('error');
+    return;
+  }
+
   const rawQty = g('qtyInput').value;
   if(S.curProduct.isBulk && !rawQty) {
     showToast('Ingresa el peso o cantidad', 'warning');
@@ -2588,8 +3028,10 @@ function addToCart(){
   const ex = S.cart.find(i=>i.barcode===p.barcode);
   const newQty = (ex?ex.quantity:0)+qty;
   
-  if(typeof p.stock === 'number' && newQty > p.stock){
-    showToast(`Solo quedan ${p.stock} en stock (tienes ${ex?ex.quantity:0} en el carrito)`,'warning');
+  const avail = stockOf(p);
+  if(typeof avail === 'number' && newQty > avail){
+    const where = curBranchName() ? ' en '+curBranchName() : '';
+    showToast(`Solo quedan ${fmtQty(avail)}${where} (tienes ${ex?ex.quantity:0} en el carrito)`,'warning');
   }
   
   if(ex){ 
@@ -3572,8 +4014,8 @@ async function processPayment(){
       change:S.payMethod==='cash'?Math.max(0,paid-total):0,
       sellerId:S.user.uid,
       sellerName:S.user.displayName||S.user.email,
-      branchId:S.userBranchId||null,
-      branchName:S.userBranchName||null,
+      branchId:curBranchId(),          // sucursal donde se cobró (vendedor: la suya; admin: la activa)
+      branchName:curBranchName(),
       shiftId:S.currentShift?.id||null,
       tsISO: now.toISOString(),
       date:localDateStr(now),
@@ -3585,7 +4027,8 @@ async function processPayment(){
 
     /* La venta se guarda SIEMPRE en el dispositivo primero: así el cobro
        nunca se traba aunque no haya internet. Después se sube a Firebase. */
-    const stockDeltas = S.cart.filter(i=>!i.isRecharge).map(i=>({barcode:i.barcode, qty:i.quantity}));
+    /* Solo se descuenta el stock de la sucursal donde se vendió */
+    const stockDeltas = S.cart.filter(i=>!i.isRecharge).map(i=>({barcode:i.barcode, qty:i.quantity, branchId:saleData.branchId}));
     outboxPush({
       id: localId, type:'sale', tsISO: saleData.tsISO, tries:0,
       payload: saleData,
@@ -3595,7 +4038,7 @@ async function processPayment(){
     });
 
     /* Reflejar el movimiento localmente (stock y turno) */
-    stockDeltas.forEach(d=>applyLocalStock(d.barcode, -d.qty, d.qty));
+    stockDeltas.forEach(d=>applyLocalStock(d.barcode, -d.qty, d.qty, d.branchId));
     if(S.currentShift){
       S.currentShift.cashSales=(S.currentShift.cashSales||0)+cashPortion;
       S.currentShift.cardSales=(S.currentShift.cardSales||0)+cardPortion;
@@ -3700,6 +4143,7 @@ function switchTab(tab){
   if(tab==='hardware') updatePrinterUI();
   if(tab==='branches') renderBranches();
   if(tab==='recharges') renderCarriersTable();
+  if(tab==='catalog') initCatalogTab();
 }
 
 /* ── METRICS ── */
@@ -3871,31 +4315,75 @@ function toggleLowStockFilter(){
     (S.lowStockOnly?'border-red-300 bg-red-50 text-red-600':'border-slate-200 bg-white text-slate-500');
   filterProdTable();
 }
-function stockBadge(p){
-  if(typeof p.stock !== 'number') return '<span class="text-slate-300 text-xs">—</span>';
-  if(p.stock<=0) return `<span class="text-xs px-2 py-0.5 rounded-full font-medium badge-low">Agotado</span>`;
-  if(p.stock<=LOW_STOCK_THRESHOLD) return `<span class="text-xs px-2 py-0.5 rounded-full font-medium badge-mid">${p.stock} · bajo</span>`;
-  return `<span class="text-xs px-2 py-0.5 rounded-full font-medium badge-ok">${p.stock}</span>`;
+function stockBadge(p, bId=curBranchId()){
+  const s=stockOf(p,bId);
+  if(typeof s!=='number'){
+    if(bId && isLegacyStock(p) && carriedIn(p,bId)) return `<span class="text-[10px] text-amber-600 font-semibold whitespace-nowrap">${fmtQty(p.stock)} sin asignar</span>`;
+    return '<span class="text-slate-300 text-xs">—</span>';
+  }
+  if(s<=0) return `<span class="text-xs px-2 py-0.5 rounded-full font-medium badge-low whitespace-nowrap">Agotado${s<0?' ('+fmtQty(s)+')':''}</span>`;
+  if(s<=LOW_STOCK_THRESHOLD) return `<span class="text-xs px-2 py-0.5 rounded-full font-medium badge-mid whitespace-nowrap">${fmtQty(s)} · bajo</span>`;
+  return `<span class="text-xs px-2 py-0.5 rounded-full font-medium badge-ok">${fmtQty(s)}</span>`;
+}
+/* Vista "Todas las sucursales": total y desglose por sucursal */
+function stockAllCell(p){
+  const parts=activeBranches()
+    .filter(b=>p.branchStock && Object.prototype.hasOwnProperty.call(p.branchStock,b.id))
+    .map(b=>({b, s:Number(p.branchStock[b.id])||0}));
+  const legacy=isLegacyStock(p) ? p.stock : null;
+  if(!parts.length && legacy==null) return '<span class="text-slate-300 text-xs">—</span>';
+  const total=parts.reduce((a,x)=>a+x.s,0)+(legacy||0);
+  const detail=[...parts.map(x=>`${esc(x.b.name)}: ${fmtQty(x.s)}`), ...(legacy!=null?[`sin asignar: ${fmtQty(legacy)}`]:[])].join(' · ');
+  return `<span class="font-bold text-slate-700 text-xs num">${fmtQty(total)}</span><span class="block text-[10px] text-slate-400 leading-tight">${detail}</span>`;
+}
+/* Qué inventario se está viendo en Productos: null (sin sucursales) · id · '*' (todas) */
+function prodView(){
+  const list=activeBranches();
+  if(!list.length) return null;
+  const v=g('prodBranchView')?.value;
+  if(v==='*' && list.length>1) return '*';
+  return list.some(b=>b.id===v) ? v : curBranchId();
+}
+function isLowIn(p, view){
+  const low=b=>{ const s=stockOf(p,b); return typeof s==='number' && s<=LOW_STOCK_THRESHOLD; };
+  if(view==='*') return activeBranches().some(b=>low(b.id));
+  return low(view);
 }
 function filterProdTable(){
   const q=g('prodFilter').value.toLowerCase();
+  const view=prodView();
   let list=S.products.filter(p=>(p.name||'').toLowerCase().includes(q)||(p.barcode||'').toLowerCase().includes(q));
-  if(S.lowStockOnly) list=list.filter(p=>typeof p.stock==='number' && p.stock<=LOW_STOCK_THRESHOLD);
+  /* Inventario de UNA sucursal: solo los productos que esa sucursal maneja */
+  let notHere=0;
+  if(view && view!=='*'){ const n=list.length; list=list.filter(p=>carriedIn(p,view)); notHere=n-list.length; }
+  if(S.lowStockOnly) list=list.filter(p=>isLowIn(p,view));
+  const src=g('prodSourceFilter')?.value||'';
+  if(src==='own')  list=list.filter(p=>p.source!=='saas');
+  if(src==='saas') list=list.filter(p=>p.source==='saas');
+  if(src==='noprice') list=list.filter(p=>p.needsPrice);
+  const note=g('prodBranchNote');
+  if(note){
+    note.innerHTML = notHere ? `${notHere} producto${notHere!==1?'s':''} de la tienda no ${notHere!==1?'están':'está'} en el inventario de <b>${esc(branchName(view))}</b>.`+
+      (activeBranches().length>1?` <button onclick="g('prodBranchView').value='*';filterProdTable()" class="text-indigo-600 font-semibold underline">Ver todas las sucursales</button>`:'') : '';
+    note.classList.toggle('hidden', !notHere);
+  }
+  const stockTh=g('prodStockTh'); if(stockTh) stockTh.textContent = view==='*' ? 'Stock (total)' : 'Stock';
+  const entryBranch = view && view!=='*' ? view : '';
   const tbody=g('prodTableBody');
   if(!list.length){tbody.innerHTML='<tr><td colspan="8" class="py-8 text-center text-slate-400">Sin resultados</td></tr>';return;}
   tbody.innerHTML=list.map(p=>`<tr class="hover:bg-slate-50 transition">
     <td class="px-3 sm:px-4 py-3"><code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">${esc(p.barcode)}</code></td>
-    <td class="px-3 sm:px-4 py-3 font-semibold text-slate-800 text-xs sm:text-sm max-w-[180px] break-anywhere">${p.favorite?'<i class="fa-solid fa-star text-amber-400 text-[10px] mr-1"></i>':''}${esc(p.name)}${expiryChip(p)}</td>
+    <td class="px-3 sm:px-4 py-3 font-semibold text-slate-800 text-xs sm:text-sm max-w-[180px] break-anywhere">${p.favorite?'<i class="fa-solid fa-star text-amber-400 text-[10px] mr-1"></i>':''}${esc(p.name)}${expiryChip(p)}${originChip(p)}<span class="md:hidden block mt-1">${view==='*' ? stockAllCell(p) : stockBadge(p, view)}</span></td>
     <td class="px-3 sm:px-4 py-3 text-right font-bold text-indigo-700 text-xs sm:text-sm whitespace-nowrap num">${fmt(p.price)}</td>
     <td class="px-3 sm:px-4 py-3 text-right text-xs text-slate-500 hidden lg:table-cell whitespace-nowrap num">${p.cost?fmt(p.cost):'<span class="text-slate-300">—</span>'}</td>
     <td class="px-3 sm:px-4 py-3 text-right text-xs hidden lg:table-cell">${p.cost?`<span class="font-bold ${(p.price-p.cost)>=0?'text-emerald-600':'text-red-500'}">${fmt(p.price-p.cost)}</span><span class="text-slate-400 block text-[10px]">${p.price?(((p.price-p.cost)/p.price)*100).toFixed(0):0}%</span>`:'<span class="text-slate-300">—</span>'}</td>
-    <td class="px-3 sm:px-4 py-3 text-center hidden md:table-cell">${stockBadge(p)}</td>
+    <td class="px-3 sm:px-4 py-3 text-center hidden md:table-cell">${view==='*' ? stockAllCell(p) : stockBadge(p, view)}</td>
     <td class="px-3 sm:px-4 py-3 text-center hidden sm:table-cell">
       <span class="text-xs px-2 py-0.5 rounded-full font-medium ${p.active!==false?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-600'}">
         ${p.active!==false?'Activo':'Inactivo'}</span>
     </td>
     <td class="px-3 sm:px-4 py-3 text-right whitespace-nowrap">
-      <button onclick="openEntryModal('${p.barcode}')" title="Agregar inventario" class="text-emerald-600 hover:text-emerald-800 text-sm p-1 min-w-[32px] min-h-[32px]"><i class="fa-solid fa-dolly"></i></button>
+      <button onclick="openEntryModal('${p.barcode}','${entryBranch}')" title="Agregar inventario" class="text-emerald-600 hover:text-emerald-800 text-sm p-1 min-w-[32px] min-h-[32px]"><i class="fa-solid fa-dolly"></i></button>
       <button onclick="editProduct('${p.barcode}')" class="text-indigo-500 hover:text-indigo-700 text-sm p-1 min-w-[32px] min-h-[32px] ml-1"><i class="fa-solid fa-pen-to-square"></i></button>
       <button onclick="toggleProduct('${p.barcode}',${p.active!==false})" class="text-sm p-1 min-w-[32px] min-h-[32px] ml-1 ${p.active!==false?'text-red-400 hover:text-red-600':'text-emerald-500 hover:text-emerald-700'}">
         <i class="fa-solid fa-${p.active!==false?'ban':'check'}"></i>
@@ -3903,33 +4391,88 @@ function filterProdTable(){
     </td>
   </tr>`).join('');
 }
+/* ── Existencias en el formulario de producto: una casilla por sucursal ── */
+function renderPfStock(p){
+  const list=activeBranches();
+  const useBranches=list.length>0;
+  g('pf_stockLegacy').classList.toggle('hidden', useBranches);
+  g('pf_priceStockGrid').classList.toggle('grid-cols-2', !useBranches);
+  g('pf_stockBranches').classList.toggle('hidden', !useBranches);
+  if(!useBranches){
+    const v=p?.stock;
+    g('pf_stock').value = typeof v==='number' ? fmtQty(v) : '';
+    g('pf_stock').dataset.orig = g('pf_stock').value;
+    return;
+  }
+  const cur=curBranchId();
+  g('pf_stockBranchInputs').innerHTML=list.map(b=>{
+    const v=p?.branchStock?.[b.id];
+    const orig = typeof v==='number' ? fmtQty(v) : '';
+    const val  = !p && b.id===cur ? '0' : orig;     // producto nuevo: se da de alta en la sucursal actual
+    return `<label class="block min-w-0">
+      <span class="text-[11px] font-semibold text-slate-600 truncate block">${esc(b.name)}${b.id===cur?' <span class="text-violet-500">(aquí)</span>':''}</span>
+      <input data-branch="${b.id}" data-orig="${orig}" type="number" inputmode="decimal" step="any" min="0" placeholder="No se maneja" value="${val}"
+        class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-400 min-h-[44px]">
+    </label>`;
+  }).join('');
+  const ln=g('pf_stockLegacyNote');
+  const legacy=p && isLegacyStock(p);
+  ln.textContent = legacy ? `Además tiene ${fmtQty(p.stock)} piezas de antes de separar por sucursal; asígnalas en Admin → Sucursales.` : '';
+  ln.classList.toggle('hidden', !legacy);
+}
+/* Devuelve el cambio de existencias para set(...,{merge:true}), o false si hay un valor inválido */
+function readPfStock(isNew){
+  if(!activeBranches().length){
+    const raw=g('pf_stock').value.trim();
+    if(!isNew && raw===g('pf_stock').dataset.orig) return {};
+    const n=raw==='' ? 0 : parseFloat(raw);
+    if(isNaN(n) || n<0){ showToast('El stock no es válido','error'); return false; }
+    return {stock:round3(n)};
+  }
+  const bs={};
+  for(const inp of document.querySelectorAll('#pf_stockBranchInputs input[data-branch]')){
+    const raw=inp.value.trim(), id=inp.dataset.branch;
+    if(raw===inp.dataset.orig) continue;                       // sin cambios
+    if(raw===''){ bs[id]=FS.FieldValue.delete(); continue; }   // esa sucursal deja de manejarlo
+    const n=parseFloat(raw);
+    if(isNaN(n) || n<0){ showToast('Revisa el stock de '+branchName(id),'error'); return false; }
+    bs[id]=round3(n);
+  }
+  return Object.keys(bs).length ? {branchStock:bs} : {};
+}
 function showProductModal(fromScan=false){
   refreshCategoryList();
   g('productModalTitle').textContent='Agregar Producto';
   g('pf_barcode').value=fromScan&&window._pendingBarcode?window._pendingBarcode:'';
   g('pf_barcode').readOnly=false;
-  g('pf_name').value=''; g('pf_price').value=''; g('pf_stock').value=''; g('pf_category').value='General'; g('pf_favorite').checked=false;
+  g('pf_name').value=''; g('pf_price').value=''; g('pf_category').value='General'; g('pf_favorite').checked=false;
+  g('pf_isBulk').checked=false;
   g('pf_cost').value=''; g('pf_costRow').classList.toggle('hidden', !S.isAdmin); updateMarginHint();
+  renderPfStock(null);
   S.editingBarcode=null;
+  _pfCatalog=null; _pfTried=''; setPfHint('');
   g('productModal').classList.remove('hidden');
+  if(g('pf_barcode').value) prefillFromCatalog();
 }
 function editProduct(barcode){
   const p=S.products.find(x=>x.barcode===barcode); if(!p) return;
   refreshCategoryList();
   g('productModalTitle').textContent='Editar Producto';
   g('pf_barcode').value=p.barcode; g('pf_barcode').readOnly=true;
-  g('pf_name').value=p.name; g('pf_price').value=p.price; g('pf_stock').value=p.stock??''; g('pf_category').value=p.category||'General';
+  g('pf_name').value=p.name; g('pf_price').value=p.price; g('pf_category').value=p.category||'General';
   g('pf_favorite').checked=!!p.favorite;
   g('pf_isBulk').checked=!!p.isBulk;
   g('pf_cost').value=p.cost??''; g('pf_costRow').classList.toggle('hidden', !S.isAdmin); updateMarginHint();
+  renderPfStock(p);
   S.editingBarcode=barcode;
+  _pfCatalog=null; _pfTried='';
+  setPfHint(p.source==='saas' ? 'ok' : '', p.source==='saas' ? 'Producto importado del catálogo maestro'+(p.needsPrice?' · falta asignarle precio':'') : '');
   g('productModal').classList.remove('hidden');
 }
 async function saveProduct(){
   let barcode=g('pf_barcode').value.trim();
   const name=g('pf_name').value.trim();
   const price=parseFloat(g('pf_price').value);
-  const stock=parseInt(g('pf_stock').value)||0;
   const category=g('pf_category').value.trim()||'General';
   const favorite=g('pf_favorite').checked;
   const isBulk=g('pf_isBulk').checked;
@@ -3942,18 +4485,42 @@ async function saveProduct(){
     barcode = 'GR-' + Math.floor(1000 + Math.random() * 9000); 
   }
   
-  const data={name,price,stock,category,favorite,isBulk,active:true,updatedAt:FS.FieldValue.serverTimestamp()};
+  const data={name,price,category,favorite,isBulk,active:true,updatedAt:FS.FieldValue.serverTimestamp()};
+  /* Existencias: por sucursal (solo se escriben las que cambiaste, para no pisar
+     ventas hechas mientras el formulario estaba abierto) */
+  const stockPatch=readPfStock(!S.editingBarcode);
+  if(stockPatch===false) return;
+  Object.assign(data, stockPatch);
   /* Precio de adquisición: SOLO el administrador puede fijarlo */
   if(S.isAdmin){
     const cost=parseFloat(g('pf_cost').value);
     data.cost = isNaN(cost)?0:cost;
     if(!isNaN(cost) && cost>price) showToast('Ojo: el costo es mayor que el precio de venta','warning');
   }
+  /* Origen: si los datos vinieron del catálogo maestro, se marca como importado */
+  const existing = S.editingBarcode ? S.products.find(p=>p.barcode===S.editingBarcode) : null;
+  const fromCat  = !S.editingBarcode && _pfCatalog && _pfCatalog.code===barcode ? _pfCatalog.mapped : null;
+  if(fromCat){
+    Object.assign(data, {
+      source:'saas', saasId:fromCat.saasId, saasCode:fromCat.saasCode,
+      importedBy:S.user?.email||S.user?.uid||'', importedAt:FS.FieldValue.serverTimestamp(),
+    });
+    if(fromCat.brand) data.brand=fromCat.brand;
+    if(fromCat.image) data.image=fromCat.image;
+  }
+  if(fromCat || existing?.source==='saas') data.needsPrice = !(price>0);
   try{
-    if(!S.editingBarcode) data.createdAt=FS.FieldValue.serverTimestamp(); 
+    if(!S.editingBarcode) data.createdAt=FS.FieldValue.serverTimestamp();
     await db.collection('products').doc(barcode).set(data,{merge:true});
-    hideProductModal(); loadProducts();
+    hideProductModal();
     showToast('Producto '+(S.editingBarcode?'actualizado':'agregado')+' ✅','success');
+    await loadProducts();
+    /* Si el producto está abierto en la caja, refrescar la tarjeta (p.ej. al asignar precio) */
+    if(S.curProduct?.barcode===barcode && !g('stateProduct').classList.contains('hidden')){
+      const fresh=S.products.find(p=>p.barcode===barcode);
+      if(fresh) showProduct(fresh,{quiet:true});
+    }
+    refreshCatalogPreview(barcode);
   }catch(e){console.error(e);showToast('Error: '+e.message,'error');}
 }
 async function toggleProduct(barcode,active){
@@ -3967,12 +4534,14 @@ async function toggleProduct(barcode,active){
 function hideProductModal(){
   stopSc('pfScanInst'); g('pf_scanArea').classList.add('hidden');
   g('productModal').classList.add('hidden'); g('pf_barcode').readOnly=false;
+  _pfCatalog=null; _pfTried='';
 }
 function startProductScan(){
   g('pf_scanArea').classList.remove('hidden');
   startSc('pf_scanReader','pfScanInst', code=>{
     g('pf_barcode').value=code; stopSc('pfScanInst'); g('pf_scanArea').classList.add('hidden');
     showToast('Código: '+code,'success');
+    prefillFromCatalog();
   });
 }
 
@@ -4151,8 +4720,11 @@ async function voidSale(){
     await db.collection('sales').doc(_curSaleDetail.id).update({
       voided:true, voidReason:reason, voidedAt:FS.FieldValue.serverTimestamp(), voidedBy:S.user?.email||S.user?.uid||''
     });
-    (_curSaleDetail.items||[]).forEach(it=>{
-      db.collection('products').doc(it.barcode).update({stock:FS.FieldValue.increment(it.quantity), salesCount:FS.FieldValue.increment(-it.quantity)}).catch(()=>{});
+    /* El stock regresa a la sucursal donde se hizo la venta */
+    const vBranch=_curSaleDetail.branchId||null;
+    (_curSaleDetail.items||[]).filter(it=>!it.isRecharge).forEach(it=>{
+      db.collection('products').doc(it.barcode).update({[stockField(vBranch)]:FS.FieldValue.increment(it.quantity), salesCount:FS.FieldValue.increment(-it.quantity)}).catch(()=>{});
+      applyLocalStock(it.barcode, it.quantity, -it.quantity, vBranch);
     });
     showToast('Venta anulada, stock repuesto ✅','success');
     hideSaleDetail(); loadHistory(); loadMetrics(document.querySelector('.pbtn.on')?.dataset.period||'day');
@@ -4247,7 +4819,7 @@ async function openShift(){
   const now=new Date();
   const data={
     sellerId:S.user.uid, sellerName:S.user.displayName||S.user.email,
-    branchId:S.userBranchId||null, branchName:S.userBranchName||null,
+    branchId:curBranchId(), branchName:curBranchName(),
     openingCash:amt, cashSales:0, cardSales:0, totalSales:0, salesCount:0, cashOut:0,
     status:'open', openISO:now.toISOString(), date:localDateStr(now)
   };
@@ -4424,10 +4996,11 @@ function restoreLocalProducts(){
     if(raw){ S.products=JSON.parse(raw)||[]; renderQuickProducts(); refreshCategoryList(); updateStockBell(); }
   }catch(e){}
 }
-function applyLocalStock(barcode, stockDelta, salesDelta){
+function applyLocalStock(barcode, stockDelta, salesDelta, bId=curBranchId()){
   const p=S.products.find(x=>x.barcode===barcode);
   if(!p) return;
-  if(typeof p.stock==='number') p.stock += stockDelta;
+  if(bId){ p.branchStock={...(p.branchStock||{})}; p.branchStock[bId]=round3((Number(p.branchStock[bId])||0)+stockDelta); }
+  else if(typeof p.stock==='number') p.stock += stockDelta;
   if(salesDelta) p.salesCount=(p.salesCount||0)+salesDelta;
   cacheProductsLocally();
 }
@@ -4508,8 +5081,11 @@ async function pushOutboxItem(item){
        propia cola durable, así que no hay que reintentarlos (evita duplicar). */
     if(!item.sideDone){
       (item.stockDeltas||[]).forEach(d=>{
+        /* Ventas guardadas antes de esta versión no traen branchId en cada línea:
+           se usa la sucursal de la venta, o el stock viejo si no tenía. */
+        const bId = ('branchId' in d) ? d.branchId : (p.branchId||null);
         db.collection('products').doc(d.barcode).update({
-          stock: FS.FieldValue.increment(-d.qty),
+          [stockField(bId)]: FS.FieldValue.increment(-d.qty),
           salesCount: FS.FieldValue.increment(d.qty)
         }).catch(()=>{});
       });
@@ -4558,9 +5134,10 @@ async function pushOutboxItem(item){
       outboxPatch(item.id,{entrySaved:true});
     }
     if(!item.sideDone){
-      const upd={ stock: FS.FieldValue.increment(p.quantity), lastEntryAt: FS.FieldValue.serverTimestamp() };
+      /* La entrada suma solo a la sucursal a la que llegó la mercancía */
+      const upd={ ...stockSetPatch(p.branchId||null, FS.FieldValue.increment(p.quantity)), lastEntryAt: FS.FieldValue.serverTimestamp() };
       if(p.updateCost && p.unitCost>0) upd.cost=p.unitCost;
-      if(p.expiry) upd.lots = FS.FieldValue.arrayUnion({expiry:p.expiry, qty:p.quantity, entryId:p.localId});
+      if(p.expiry) upd.lots = FS.FieldValue.arrayUnion({expiry:p.expiry, qty:p.quantity, entryId:p.localId, branchId:p.branchId||null});
       db.collection('products').doc(p.productBarcode).set(upd,{merge:true}).catch(()=>{});
       outboxPatch(item.id,{sideDone:true});
     }
@@ -4621,8 +5198,25 @@ function renderSyncModal(){
    Escanea un producto existente, indica cuántas piezas entran,
    su costo de adquisición y, con el switch, su fecha de caducidad.
 ════════════════════════════════════════════════════════════════ */
-function openEntryModal(barcode){
+function entryBranchId(){
+  if(!activeBranches().length) return null;
+  const v=g('ie_branch')?.value;
+  return activeBranches().some(b=>b.id===v) ? v : curBranchId();
+}
+function onEntryBranchChange(){ if(S.entryProduct){ showEntryStock(); updateEntryPreview(); } }
+function showEntryStock(){
+  const p=S.entryProduct; if(!p) return;
+  const bId=entryBranchId(), s=stockOf(p,bId);
+  g('ie_curStock').textContent = typeof s==='number' ? fmtQty(s) : (bId ? '0 (nuevo aquí)' : '0');
+  const lbl=g('ie_stockLabel'); if(lbl) lbl.textContent = bId ? 'Stock en '+branchName(bId)+':' : 'Stock actual:';
+}
+function openEntryModal(barcode, bId){
   if(!S.isAdmin){ showToast('Solo el administrador puede registrar entradas','error'); return; }
+  /* ¿A qué sucursal llega la mercancía? (por defecto la que estás viendo/trabajando) */
+  refreshBranchSelects();
+  const hasBranches=activeBranches().length>0;
+  g('ie_branchRow').classList.toggle('hidden', !hasBranches);
+  if(hasBranches) g('ie_branch').value = activeBranches().some(b=>b.id===bId) ? bId : curBranchId();
   S.entryProduct=null;
   g('ie_barcode').value=barcode||'';
   g('ie_found').classList.add('hidden');
@@ -4649,15 +5243,33 @@ function startEntryScan(){
     lookupEntryProduct();
   });
 }
-function lookupEntryProduct(){
+async function lookupEntryProduct(){
   const code=g('ie_barcode').value.trim();
   if(!code) return;
-  const p=S.products.find(x=>x.barcode===code)
+  let p=S.products.find(x=>x.barcode===code)
        || S.products.find(x=>(x.name||'').toLowerCase()===code.toLowerCase());
+  let hint='';
+  /* No está en mi inventario → se intenta traer del catálogo maestro */
+  if(!p && looksLikeCode(code) && SC.cfg.enabled!==false){
+    if(!catalogConfigured()) hint='Configura el catálogo maestro en Admin → Catálogo maestro para buscarlo ahí también.';
+    else if(!isOnline()) hint='Sin conexión: no se pudo buscar en el catálogo maestro.';
+    else {
+      g('ie_found').classList.add('hidden'); g('ie_notFound').classList.add('hidden');
+      show('ie_loading');
+      try{
+        const local=await db.collection('products').doc(code).get().catch(()=>null);
+        p = local?.exists ? {barcode:local.id, ...local.data()} : await importFromCatalog(code);
+        if(!p) hint='Tampoco está en el catálogo maestro.';
+      }catch(e){ hint=e.message||'No se pudo consultar el catálogo maestro.'; }
+      finally{ hide('ie_loading'); }
+      if(g('ie_barcode').value.trim()!==code) return;   // ya se escaneó otro código
+    }
+  }
   if(!p){
     S.entryProduct=null;
     g('ie_found').classList.add('hidden');
     g('ie_notFound').classList.remove('hidden');
+    const h=g('ie_notFoundHint'); h.textContent=hint; h.classList.toggle('hidden',!hint);
     window._pendingBarcode=code;
     beep('error');
     return;
@@ -4667,7 +5279,7 @@ function lookupEntryProduct(){
   g('ie_found').classList.remove('hidden');
   g('ie_found').classList.add('pop-in');
   g('ie_prodName').textContent=p.name;
-  g('ie_curStock').textContent=(typeof p.stock==='number'?p.stock:0);
+  showEntryStock();
   g('ie_curPrice').textContent=fmt(p.price);
   g('ie_curCost').textContent=p.cost?fmt(p.cost):'sin costo';
   g('ie_cost').value=p.cost||'';
@@ -4698,8 +5310,9 @@ function updateEntryPreview(){
   g('ie_costPreview').innerHTML = cost
     ? `Inversión: <b class="text-slate-700">${fmt(total)}</b> · ganancia esperada del lote: <b class="${util>=0?'text-emerald-600':'text-red-500'}">${fmt(util)}</b>`
     : 'Sin costo capturado no se calculará la ganancia real de estas piezas.';
-  const newStock=(typeof p?.stock==='number'?p.stock:0)+qty;
-  g('ie_saveLabel').textContent=`Agregar ${qty} pza${qty!==1?'s':''} (queda ${newStock})`;
+  const bId=entryBranchId();
+  const newStock=round3((stockOf(p,bId)||0)+qty);
+  g('ie_saveLabel').textContent=`Agregar ${qty} pza${qty!==1?'s':''} (queda ${newStock}${bId?' en '+branchName(bId):''})`;
 }
 async function saveEntry(){
   if(!S.isAdmin){ showToast('Solo el administrador puede registrar entradas','error'); return; }
@@ -4718,6 +5331,8 @@ async function saveEntry(){
   const btn=g('ie_saveBtn'); btn.disabled=true;
   const now=new Date();
   const localId=newLocalId();
+  const bId=entryBranchId();
+  const bName=bId ? branchName(bId) : null;
   const entry={
     localId,
     productBarcode:p.barcode, productName:p.name,
@@ -4726,7 +5341,7 @@ async function saveEntry(){
     expiry: expiry||null,
     supplier: supplier||null,
     userId:S.user?.uid||null, userName:S.user?.displayName||S.user?.email||'',
-    branchId:S.userBranchId||null, branchName:S.userBranchName||null,
+    branchId:bId, branchName:bName,     // sucursal a la que llegó la mercancía
     tsISO:now.toISOString(), date:localDateStr(now),
     year:now.getFullYear(), month:now.getMonth()+1,
     createdOffline:!isOnline(),
@@ -4747,7 +5362,7 @@ async function saveEntry(){
       source:'inventory', entryId:localId,
       shiftId:(method==='cash' && S.currentShift)?S.currentShift.id:null,
       userId:S.user?.uid||null, userName:S.user?.displayName||S.user?.email||'',
-      branchId:S.userBranchId||null, branchName:S.userBranchName||null,
+      branchId:bId, branchName:bName,     // la compra cuenta como gasto de esa sucursal
       date:entry.date, year:entry.year, month:entry.month,
       tsISO:entry.tsISO, createdOffline:!isOnline()
     };
@@ -4761,18 +5376,18 @@ async function saveEntry(){
   outboxPush({id:localId, type:'entry', tsISO:entry.tsISO, tries:0, payload:entry, label:`Entrada ${p.name} ×${qty}`});
 
   /* Reflejarlo de inmediato en el catálogo local */
-  applyLocalStock(p.barcode, qty, 0);
+  applyLocalStock(p.barcode, qty, 0, bId);
   const cached=S.products.find(x=>x.barcode===p.barcode);
   if(cached){
     if(entry.updateCost && unitCost>0) cached.cost=unitCost;
-    if(expiry){ cached.lots=[...(cached.lots||[]), {expiry, qty, entryId:localId}]; }
+    if(expiry){ cached.lots=[...(cached.lots||[]), {expiry, qty, entryId:localId, branchId:bId}]; }
     cacheProductsLocally();
   }
 
   btn.disabled=false;
   hideEntryModal();
   beep('success');
-  showToast(`+${qty} pza(s) de ${p.name}${isOnline()?'':' (se subirá al volver el internet)'}`, isOnline()?'success':'warning');
+  showToast(`+${qty} pza(s) de ${p.name}${bName?' en '+bName:''}${isOnline()?'':' (se subirá al volver el internet)'}`, isOnline()?'success':'warning');
   updateStockBell();
   if(isOnline()) await flushOutbox();
   if(g('admin-inventory') && !g('admin-inventory').classList.contains('hidden')) loadEntries();
@@ -4811,7 +5426,7 @@ function renderEntries(){
       <td class="px-3 py-3 text-right text-xs text-slate-600 whitespace-nowrap num">${e.unitCost?fmt(e.unitCost):'—'}</td>
       <td class="px-3 py-3 text-right text-xs font-bold text-slate-700 whitespace-nowrap num">${e.totalCost?fmt(e.totalCost):'—'}</td>
       <td class="px-3 py-3">${exp}</td>
-      <td class="px-3 py-3 text-xs text-slate-500 hidden md:table-cell">${esc(e.userName||'')}</td>
+      <td class="px-3 py-3 text-xs text-slate-500 hidden md:table-cell">${e.branchId?`<span class="block font-semibold text-violet-600">${esc(branchName(e.branchId)||e.branchName||'')}</span>`:''}${esc(e.userName||'')}</td>
     </tr>`;
   }).join('');
 }
@@ -4836,7 +5451,7 @@ function expiryChip(p){
 function getExpiringLots(){
   const out=[];
   S.products.forEach(p=>(p.lots||[]).forEach(l=>{
-    if(l&&l.expiry) out.push({name:p.name, barcode:p.barcode, expiry:l.expiry, qty:l.qty||0, days:daysUntil(l.expiry)});
+    if(l&&l.expiry) out.push({name:p.name, barcode:p.barcode, expiry:l.expiry, qty:l.qty||0, days:daysUntil(l.expiry), branchId:l.branchId||null});
   }));
   return out.sort((a,b)=>a.days-b.days);
 }
@@ -4849,7 +5464,7 @@ function renderExpiryPanel(){
     <div class="flex items-center justify-between gap-2 border border-slate-200 rounded-xl px-3 py-2">
       <div class="min-w-0">
         <p class="text-xs font-semibold text-slate-800 break-anywhere">${esc(l.name)}</p>
-        <p class="text-[10px] text-slate-400 break-anywhere">${l.qty} pza(s) · ${esc(l.barcode)}</p>
+        <p class="text-[10px] text-slate-400 break-anywhere">${l.qty} pza(s) · ${esc(l.barcode)}${l.branchId&&branchName(l.branchId)?' · <span class="text-violet-600 font-semibold">'+esc(branchName(l.branchId))+'</span>':''}</p>
       </div>
       ${expiryTag(l.expiry)}
     </div>`).join('')
@@ -4857,8 +5472,8 @@ function renderExpiryPanel(){
 }
 function exportEntriesCSV(){
   if(!S.entries.length){ showToast('No hay entradas para exportar','warning'); return; }
-  const h=['Fecha','Código','Producto','Piezas','Costo unitario','Costo total','Caducidad','Proveedor','Registró'];
-  const rows=S.entries.map(e=>[tsLabel(e.timestamp,e.tsISO),e.productBarcode||'',e.productName||'',e.quantity||0,e.unitCost||0,e.totalCost||0,e.expiry||'',e.supplier||'',e.userName||'']);
+  const h=['Fecha','Sucursal','Código','Producto','Piezas','Costo unitario','Costo total','Caducidad','Proveedor','Registró'];
+  const rows=S.entries.map(e=>[tsLabel(e.timestamp,e.tsISO),branchName(e.branchId)||e.branchName||'',e.productBarcode||'',e.productName||'',e.quantity||0,e.unitCost||0,e.totalCost||0,e.expiry||'',e.supplier||'',e.userName||'']);
   downloadCSV(h,rows,'entradas_inventario');
 }
 
@@ -5093,6 +5708,617 @@ function updateMarginHint(){
   const m=price-cost;
   el.textContent=fmt(m)+(price?` · ${((m/price)*100).toFixed(0)}%`:'');
   el.className='text-sm font-black '+(m>=0?'text-emerald-600':'text-red-500');
+}
+
+/* ════════════════════════════════════════════════════════════════
+   CATÁLOGO MAESTRO DEL SAAS (saas-2c4ef, solo lectura)
+   ─────────────────────────────────────────────────────────────────
+   • Mis productos = Firestore de esta app (tienda-2d9fe) → products
+   • Catálogo      = Firestore del SaaS  (saas-2c4ef)    → productos
+   Al escanear: primero se busca en mis productos. SOLO si el código no
+   existe ahí se consulta el catálogo, y el producto se copia a
+   products/{código} con 0 piezas en la sucursal donde se escaneó.
+   Las reglas del SaaS piden sesión en SU proyecto (request.auth != null),
+   por eso el POS entra con una cuenta lectora dedicada que el admin
+   configura en Admin → Catálogo maestro (se guarda en settings/saasCatalog).
+════════════════════════════════════════════════════════════════ */
+const SAAS_CONFIG = {
+  apiKey:"AIzaSyCiSLtAQTFre5eqj5tB9lIOj97EKeKGQcg",
+  authDomain:"saas-2c4ef.firebaseapp.com",
+  projectId:"saas-2c4ef",
+  storageBucket:"saas-2c4ef.firebasestorage.app",
+  messagingSenderId:"790186047116",
+  appId:"1:790186047116:web:5a490e45382c4c6c846da9"
+};
+const SAAS_DEFAULTS = { enabled:true, collection:'productos', barcodeField:'auto', email:'', password:'', lookupMode:null };
+/* Nombres de campo que se prueban en cada documento del catálogo (en orden).
+   Si tu catálogo usa otro nombre para algo, agrégalo a la lista que corresponda. */
+const SAAS_FIELDS = {
+  barcode : ['codigo','codigo_barras','codigoBarras','barcode','ean','upc','sku','code','clave'],
+  name    : ['nombre','name','descripcion','description','producto','titulo','title'],
+  price   : ['precio','price','precio_venta','precioVenta','precio_publico','precioPublico','pvp'],
+  category: ['categoria','category','departamento','familia','rubro'],
+  brand   : ['marca','brand','fabricante'],
+  image   : ['imagen','image','img','foto','imageUrl','image_url','url_imagen'],
+};
+const SAAS_MISS_TTL  = 30*60*1000;  // un código que no está en el catálogo no se vuelve a consultar en 30 min
+const SAAS_HIT_TTL   = 10*60*1000;  // lo encontrado se recuerda 10 min (vista previa → importar sin releer)
+const SAAS_MODE_KEY  = 'posSaasMode_v1';
+const SAAS_READS_KEY = 'posSaasReads_v1';
+
+const saasApp  = firebase.initializeApp(SAAS_CONFIG, 'saas');   // segunda app: no toca la sesión de la tienda
+const saasAuth = saasApp.auth();
+const saasDb   = saasApp.firestore();
+const saasAuthReady = new Promise(res=>{ const off=saasAuth.onAuthStateChanged(u=>{ off(); res(u); }); });
+
+const SC = {
+  cfg:{...SAAS_DEFAULTS}, loaded:false, unsub:null, formDirty:false,
+  status:'off', statusMsg:'', signingIn:null, authFailUntil:0, authFailMsg:'',
+  misses:new Map(), hits:new Map(), inflight:new Map(), sample:null,
+};
+let _pfCatalog = null, _pfTried = '';   // autocompletado del modal de producto
+
+class CatalogError extends Error{ constructor(msg, code){ super(msg); this.code=code; } }
+
+/* ── Utilidades de códigos y campos ── */
+function looksLikeCode(s){
+  s=String(s||'').trim();
+  return /^[A-Za-z0-9._-]{4,40}$/.test(s) && /\d{4,}/.test(s);   // nombres como "coca" no gastan lecturas
+}
+function codeVariants(code){
+  const v=new Set([code]);
+  if(/^\d+$/.test(code)){
+    if(code.length===12) v.add('0'+code);                        // UPC-A  → EAN-13
+    if(code.length===13 && code[0]==='0') v.add(code.slice(1));   // EAN-13 → UPC-A
+    if(code.length===14 && code[0]==='0') v.add(code.slice(1));   // GTIN-14 → EAN-13
+  }
+  return [...v].filter(x=>x && !x.includes('/'));
+}
+function pickField(data, keys){
+  if(!data || typeof data!=='object') return {key:null, value:null};
+  const lower={}; Object.keys(data).forEach(k=>{ lower[k.toLowerCase()]=k; });
+  for(const k of keys){
+    const real = Object.prototype.hasOwnProperty.call(data,k) ? k : lower[k.toLowerCase()];
+    if(real==null) continue;
+    const v=data[real];
+    if(v===null || v===undefined || v==='') continue;
+    return {key:real, value:v};
+  }
+  return {key:null, value:null};
+}
+function parseMoney(v){
+  if(typeof v==='number') return isFinite(v)?v:0;
+  if(v && typeof v==='object'){   // p.ej. { venta: 25, costo: 18 }
+    const inner=pickField(v,['venta','publico','valor','value','amount','precio']).value;
+    return inner!=null ? parseMoney(inner) : 0;
+  }
+  let s=String(v??'').replace(/[^0-9.,-]/g,'');
+  if(s.includes(',') && s.includes('.')) s=s.replace(/,/g,'');
+  else if(/,\d{3}$/.test(s)) s=s.replace(/,/g,'');
+  else s=s.replace(',','.');
+  const n=parseFloat(s);
+  return isFinite(n)?n:0;
+}
+function mapSaasProduct(code, hit){
+  const d=hit.data||{};
+  const name =pickField(d,SAAS_FIELDS.name);
+  const price=pickField(d,SAAS_FIELDS.price);
+  const cat  =pickField(d,SAAS_FIELDS.category);
+  const brand=pickField(d,SAAS_FIELDS.brand);
+  const img  =pickField(d,SAAS_FIELDS.image);
+  const bc   =pickField(d,SAAS_FIELDS.barcode);
+  const priceN=Math.round(parseMoney(price.value)*100)/100;
+  const asText=v=> (v==null || typeof v==='object') ? '' : String(v).trim();
+  return {
+    barcode : code,
+    name    : (asText(name.value) || 'Producto '+code).slice(0,140),
+    price   : priceN>0 ? priceN : 0,
+    category: asText(cat.value).slice(0,60) || 'General',
+    brand   : asText(brand.value).slice(0,60) || null,
+    image   : (typeof img.value==='string' && /^https?:\/\//i.test(img.value)) ? img.value : null,
+    saasId  : hit.id,
+    saasCode: asText(bc.value) || hit.id,
+    _keys   : {barcode:bc.key, name:name.key, price:price.key, category:cat.key, brand:brand.key, image:img.key},
+  };
+}
+
+/* ── Estado / configuración ── */
+function catalogConfigured(){ return !!(SC.cfg.email && SC.cfg.password); }
+function learnedMode(){
+  try{
+    const m=JSON.parse(localStorage.getItem(SAAS_MODE_KEY)||'null');
+    if(m && m.col===SC.cfg.collection) return m.mode;
+  }catch(e){}
+  return null;
+}
+function rememberMode(mode){
+  try{ localStorage.setItem(SAAS_MODE_KEY, JSON.stringify({col:SC.cfg.collection, mode})); }catch(e){}
+  if(S.isAdmin && SC.cfg.lookupMode!==mode){
+    SC.cfg.lookupMode=mode;   // así todas las cajas lo usan
+    db.collection('settings').doc('saasCatalog').set({lookupMode:mode},{merge:true}).catch(()=>{});
+  }
+}
+function effectiveMode(){
+  const f=(SC.cfg.barcodeField||'auto').trim();
+  if(f==='docid') return 'docid';
+  if(f && f!=='auto') return 'field:'+f;
+  return SC.cfg.lookupMode || learnedMode() || null;
+}
+function catalogModeLabel(){
+  const m=effectiveMode();
+  const auto=(SC.cfg.barcodeField||'auto')==='auto';
+  if(!m) return 'Aún no se sabe cómo guarda el catálogo los códigos. Pulsa “Probar” para detectarlo: así cada búsqueda cuesta una sola lectura.';
+  return 'Las búsquedas usan '+(m==='docid'?'el ID del documento':'el campo “'+m.slice(6)+'”')+' como código de barras'+(auto?' (detectado automáticamente).':'.');
+}
+
+function subscribeCatalogSettings(){
+  if(SC.unsub) return;
+  SC.unsub=db.collection('settings').doc('saasCatalog').onSnapshot(snap=>{
+    const prev=SC.cfg;
+    SC.cfg={...SAAS_DEFAULTS, ...(snap.exists?snap.data():{})};
+    SC.loaded=true;
+    if(prev.collection!==SC.cfg.collection || prev.barcodeField!==SC.cfg.barcodeField){ SC.misses.clear(); SC.hits.clear(); }
+    if(prev.email!==SC.cfg.email || prev.password!==SC.cfg.password) SC.authFailUntil=0;
+    refreshCatalogStatus(true);
+    renderCatalogTab();
+  }, err=>{
+    SC.loaded=true;
+    setCatalogStatus('error','No se pudo leer settings/saasCatalog en tu Firestore ('+(err.code||err.message)+'). Agrega la regla de "settings".');
+    renderCatalogTab();
+  });
+}
+function stopCatalog(){
+  if(SC.unsub){ SC.unsub(); SC.unsub=null; }
+  SC.cfg={...SAAS_DEFAULTS}; SC.loaded=false; SC.sample=null;
+  SC.misses.clear(); SC.hits.clear(); SC.authFailUntil=0;
+  setCatalogStatus('off','');
+  saasAuth.signOut().catch(()=>{});
+}
+async function refreshCatalogStatus(warm){
+  if(SC.cfg.enabled===false) return setCatalogStatus('off','La búsqueda en el catálogo está desactivada.');
+  if(!catalogConfigured())   return setCatalogStatus('unconfigured','Falta guardar el correo y la contraseña de la cuenta lectora.');
+  if(!warm) return;
+  if(!isOnline()) return setCatalogStatus('offline','Sin conexión: se conectará cuando vuelva el internet.');
+  if(SC.status!=='ok') setCatalogStatus('checking','Conectando con el catálogo…');
+  try{ const u=await ensureSaasAuth(); setCatalogStatus('ok','Conectado como '+u.email); }
+  catch(e){ setCatalogStatus('error', toCatalogError(e).message); }
+}
+window.addEventListener('online', ()=>{ if(S.user && SC.loaded) refreshCatalogStatus(true); });
+
+/* ── Errores en lenguaje claro ── */
+function toCatalogError(e){
+  if(e instanceof CatalogError) return e;
+  const c=String(e?.code||''), m=String(e?.message||e||'');
+  if(m==='timeout' || c==='unavailable' || c==='auth/network-request-failed' || c==='deadline-exceeded')
+    return new CatalogError('No hay conexión con el catálogo maestro.','offline');
+  if(['auth/invalid-credential','auth/wrong-password','auth/user-not-found','auth/invalid-email','auth/invalid-login-credentials'].includes(c))
+    return new CatalogError('Correo o contraseña de la cuenta lectora incorrectos (proyecto saas-2c4ef).','auth');
+  if(c==='auth/user-disabled')   return new CatalogError('La cuenta lectora está deshabilitada en saas-2c4ef.','auth');
+  if(c==='auth/too-many-requests') return new CatalogError('Demasiados intentos de inicio de sesión en el catálogo. Espera unos minutos.','auth');
+  if(c==='auth/operation-not-allowed') return new CatalogError('Activa el acceso con correo/contraseña en Authentication del proyecto saas-2c4ef.','auth');
+  if(/referer|referrer/i.test(c+m)) return new CatalogError('La API key del SaaS no permite este dominio. Agrégalo en Google Cloud → Credenciales del proyecto saas-2c4ef.','auth');
+  if(c==='permission-denied' || c==='unauthenticated')
+    return new CatalogError('El catálogo rechazó la lectura. Revisa que la cuenta lectora exista en saas-2c4ef y que App Check no esté bloqueando este dominio.','denied');
+  if(c==='failed-precondition') return new CatalogError('Firestore pide un índice para esta búsqueda: '+m,'index');
+  return new CatalogError('Error del catálogo: '+m, c||'error');
+}
+
+/* ── Sesión en el proyecto del SaaS ── */
+async function ensureSaasAuth(){
+  if(!catalogConfigured()) throw new CatalogError('Configura la cuenta lectora en Admin → Catálogo maestro.','unconfigured');
+  await saasAuthReady;
+  const want=SC.cfg.email.trim().toLowerCase();
+  const cur=saasAuth.currentUser;
+  if(cur && (cur.email||'').toLowerCase()===want) return cur;
+  if(Date.now()<SC.authFailUntil) throw new CatalogError(SC.authFailMsg,'auth');
+  if(!SC.signingIn){
+    SC.signingIn=(async()=>{
+      try{
+        if(cur) await saasAuth.signOut();
+        const cred=await withTimeout(saasAuth.signInWithEmailAndPassword(want, SC.cfg.password), 15000);
+        return cred.user;
+      }catch(e){
+        const err=toCatalogError(e);
+        if(err.code==='auth'){ SC.authFailUntil=Date.now()+60000; SC.authFailMsg=err.message; }   // no insistir con datos malos
+        throw err;
+      }finally{ SC.signingIn=null; }
+    })();
+  }
+  return SC.signingIn;
+}
+
+/* ── Búsqueda en el catálogo (solo por código) ── */
+function lookupStrategies(){
+  const m=effectiveMode();
+  if(m) return [m];
+  return ['docid', ...SAAS_FIELDS.barcode.map(k=>'field:'+k)];   // primera vez: se prueba y se aprende
+}
+async function saasFindByCode(code){
+  const col=saasDb.collection(SC.cfg.collection||'productos');
+  const vars=codeVariants(code);
+  if(!vars.length) return null;
+  const nums=vars.filter(x=>/^\d{1,15}$/.test(x)).map(Number);   // por si el catálogo guarda el código como número
+  const autoMode=(SC.cfg.barcodeField||'auto')==='auto' && !SC.cfg.lookupMode && !learnedMode();
+  for(const st of lookupStrategies()){
+    const q = st==='docid'
+      ? col.where(firebase.firestore.FieldPath.documentId(),'in',vars)
+      : col.where(st.slice(6),'in',[...new Set([...vars,...nums])].slice(0,30));
+    let snap;
+    try{ snap=await withTimeout(q.limit(1).get(), 10000); }
+    catch(e){ throw toCatalogError(e); }
+    countCatalogReads(Math.max(1,snap.size));
+    if(!snap.empty){
+      if(autoMode) rememberMode(st);
+      const d=snap.docs[0];
+      return {id:d.id, data:d.data(), via:st};
+    }
+  }
+  return null;
+}
+function catalogLookup(code, opts={}){
+  code=String(code||'').trim();
+  if(!looksLikeCode(code)) return Promise.resolve(null);
+  if(!opts.fresh){
+    const h=SC.hits.get(code);   if(h && Date.now()-h.ts<SAAS_HIT_TTL) return Promise.resolve(h.r);
+    const miss=SC.misses.get(code); if(miss && Date.now()-miss<SAAS_MISS_TTL) return Promise.resolve(null);
+  }
+  if(SC.inflight.has(code)) return SC.inflight.get(code);
+  if(!isOnline()) return Promise.reject(new CatalogError('Sin conexión: no se pudo consultar el catálogo maestro.','offline'));
+  const job=(async()=>{
+    try{
+      const u=await ensureSaasAuth();
+      const hit=await saasFindByCode(code);
+      if(SC.status!=='ok') setCatalogStatus('ok','Conectado como '+u.email);
+      if(!hit){ SC.misses.set(code,Date.now()); SC.hits.delete(code); return null; }
+      const r={code, hit, mapped:mapSaasProduct(code, hit)};
+      SC.hits.set(code,{r, ts:Date.now()}); SC.misses.delete(code);
+      return r;
+    }catch(e){
+      const err=toCatalogError(e);
+      if(err.code!=='offline') setCatalogStatus('error', err.message);
+      throw err;
+    }
+  })();
+  SC.inflight.set(code, job);
+  job.finally(()=>{ if(SC.inflight.get(code)===job) SC.inflight.delete(code); }).catch(()=>{});
+  return job;
+}
+
+/* Trae el producto del catálogo y lo copia a MI inventario (products/{código}).
+   Devuelve el producto local, o null si el catálogo tampoco lo tiene. */
+async function importFromCatalog(code){
+  const r=await catalogLookup(code);
+  if(!r) return null;
+  const m=r.mapped;
+  const data={
+    name:m.name, price:m.price, ...stockSetPatch(curBranchId(), 0), category:m.category,   // entra al inventario de esta sucursal con 0
+    favorite:false, isBulk:false, active:true,
+    source:'saas', saasId:m.saasId, saasCode:m.saasCode,
+    needsPrice: !(m.price>0),
+    importedBy: S.user?.email||S.user?.uid||'',
+    importedAt: FS.FieldValue.serverTimestamp(),
+    createdAt : FS.FieldValue.serverTimestamp(),
+    updatedAt : FS.FieldValue.serverTimestamp(),
+  };
+  if(m.brand) data.brand=m.brand;
+  if(m.image) data.image=m.image;
+  const plain={barcode:code, ...data, importedAt:null, createdAt:null, updatedAt:null};
+  const ref=db.collection('products').doc(code);
+  let product=plain, saved=false;
+  try{
+    /* Transacción: si otra caja lo importó (o lo creaste) un segundo antes, no se pisa */
+    const res=await withTimeout(db.runTransaction(async tx=>{
+      const cur=await tx.get(ref);
+      if(cur.exists) return {existed:true, data:cur.data()};
+      tx.set(ref, data);
+      return {existed:false};
+    }), 12000);
+    saved=true;
+    if(res.existed) product={barcode:code, ...res.data};
+    else showToast(`“${m.name}” se agregó a tu inventario desde el catálogo`,'success');
+  }catch(e){
+    console.warn('No se pudo guardar el producto importado:', e);
+    showToast('Se encontró en el catálogo, pero no se pudo guardar en tu inventario: '+(e.message||e),'warning');
+  }
+  if(saved){
+    const i=S.products.findIndex(p=>p.barcode===code);
+    if(i>=0) S.products[i]={...S.products[i], ...product}; else S.products.push(product);
+    cacheProductsLocally(); renderCatalogKpis();
+  }
+  return product;
+}
+
+/* ── Contador de lecturas (para vigilar el costo en el SaaS) ── */
+function countCatalogReads(n){
+  try{
+    const t=localDateStr(new Date());
+    const o=JSON.parse(localStorage.getItem(SAAS_READS_KEY)||'{}');
+    localStorage.setItem(SAAS_READS_KEY, JSON.stringify({date:t, count:(o.date===t?o.count||0:0)+n}));
+  }catch(e){}
+  const el=g('kpiCatReads'); if(el) el.textContent=catalogReadsToday();
+}
+function catalogReadsToday(){
+  try{ const o=JSON.parse(localStorage.getItem(SAAS_READS_KEY)||'{}'); return o.date===localDateStr(new Date())?(o.count||0):0; }
+  catch(e){ return 0; }
+}
+
+/* ── UI: etiquetas y mensajes ── */
+function originChip(p){
+  let s='';
+  if(p.source==='saas') s+=' <span class="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-cyan-100 text-cyan-700 whitespace-nowrap"><i class="fa-solid fa-database mr-0.5"></i>Catálogo</span>';
+  if(p.needsPrice)      s+=' <span class="text-[10px] px-1.5 py-0.5 rounded-full font-bold badge-low whitespace-nowrap">Sin precio</span>';
+  return s;
+}
+const CAT_MSG_CLS  = {loading:'bg-cyan-50 text-cyan-700 border-cyan-100', ok:'bg-emerald-50 text-emerald-700 border-emerald-200',
+                      miss:'bg-slate-50 text-slate-600 border-slate-200', warn:'bg-amber-50 text-amber-700 border-amber-200',
+                      error:'bg-red-50 text-red-600 border-red-200'};
+const CAT_MSG_ICON = {loading:'fa-spinner fa-spin', ok:'fa-circle-check', miss:'fa-circle-info', warn:'fa-triangle-exclamation', error:'fa-circle-xmark'};
+function catMsg(type,msg){
+  return `<p class="text-xs border rounded-lg px-3 py-2 ${CAT_MSG_CLS[type]||''}"><i class="fa-solid ${CAT_MSG_ICON[type]||'fa-circle-info'} mr-1.5"></i>${esc(msg)}</p>`;
+}
+function setPfHint(type,msg){
+  const el=g('pf_catalogHint'); if(!el) return;
+  if(!type || !msg){ el.className='hidden'; el.innerHTML=''; return; }
+  el.className='text-[11px] mt-1.5 px-2.5 py-1.5 rounded-lg border '+(CAT_MSG_CLS[type]||'');
+  el.innerHTML=`<i class="fa-solid ${CAT_MSG_ICON[type]||'fa-circle-info'} mr-1"></i>${esc(msg)}`;
+}
+
+/* ── Modal de producto: autocompletar con el catálogo ── */
+async function prefillFromCatalog(){
+  if(S.editingBarcode) return;
+  const code=g('pf_barcode').value.trim();
+  if(!code || code===_pfTried) return;
+  _pfTried=code; _pfCatalog=null;
+  if(!S.user || !looksLikeCode(code) || SC.cfg.enabled===false || !catalogConfigured()){ setPfHint(''); return; }
+  const local=S.products.find(p=>p.barcode===code);
+  if(local){ setPfHint('warn',`Ese código ya está en tu inventario (“${local.name}”); al guardar se actualizará.`); return; }
+  if(!isOnline()){ setPfHint('warn','Sin conexión: no se pudo consultar el catálogo maestro.'); return; }
+  setPfHint('loading','Buscando en el catálogo maestro…');
+  try{
+    const r=await catalogLookup(code);
+    if(g('pf_barcode').value.trim()!==code || g('productModal').classList.contains('hidden')) return;
+    if(!r){ setPfHint('miss','No está en el catálogo maestro: se creará como producto propio.'); return; }
+    applyCatalogToProductForm(r, false);
+  }catch(e){
+    if(g('pf_barcode').value.trim()===code) setPfHint('error', e.message);
+  }
+}
+function applyCatalogToProductForm(r, overwrite){
+  const m=r.mapped;
+  _pfCatalog=r; _pfTried=r.code;
+  if(overwrite || !g('pf_name').value.trim()) g('pf_name').value=m.name;
+  if((overwrite || !g('pf_price').value) && m.price>0) g('pf_price').value=m.price;
+  const cat=g('pf_category').value.trim();
+  if(overwrite || !cat || cat==='General') g('pf_category').value=m.category;
+  updateMarginHint();
+  setPfHint('ok','Datos tomados del catálogo maestro'+(m.brand?' · '+m.brand:'')+(m.price>0?'':' · el catálogo no trae precio, captúralo'));
+}
+
+/* ── Pestaña Admin → Catálogo maestro ── */
+const CAT_STATUS = {
+  ok          :{dot:'bg-emerald-400',            txt:'text-emerald-600', short:'Conectado'},
+  checking    :{dot:'bg-blue-400 animate-pulse', txt:'text-blue-600',    short:'Conectando…'},
+  error       :{dot:'bg-red-500',                txt:'text-red-600',     short:'Error'},
+  unconfigured:{dot:'bg-amber-400',              txt:'text-amber-600',   short:'Sin configurar'},
+  offline     :{dot:'bg-amber-400',              txt:'text-amber-600',   short:'Sin conexión'},
+  off         :{dot:'bg-gray-300',               txt:'text-slate-400',   short:'Desactivado'},
+};
+function setCatalogStatus(state,msg){ SC.status=state; SC.statusMsg=msg||''; renderCatalogStatus(); }
+function renderCatalogStatus(){
+  const dot=g('catStatusDot'); if(!dot) return;
+  const st=CAT_STATUS[SC.status]||CAT_STATUS.off;
+  dot.className='w-2 h-2 rounded-full inline-block shrink-0 '+st.dot;
+  g('catStatusShort').textContent=st.short; g('catStatusShort').className=st.txt;
+  const t=g('catStatusText'); t.textContent=SC.statusMsg||st.short;
+  t.className='text-xs font-semibold mb-3 break-anywhere '+st.txt;
+}
+function renderCatalogKpis(){
+  const el=g('kpiCatOwn'); if(!el) return;
+  let own=0, imp=0, noPrice=0;
+  S.products.forEach(p=>{ if(p.source==='saas'){ imp++; if(p.needsPrice) noPrice++; } else own++; });
+  el.textContent=own; g('kpiCatImported').textContent=imp; g('kpiCatNoPrice').textContent=noPrice;
+  g('kpiCatReads').textContent=catalogReadsToday();
+}
+function renderCatalogTab(){
+  if(!g('admin-catalog')) return;
+  renderCatalogKpis();
+  if(!SC.formDirty){
+    g('cat_enabled').checked = SC.cfg.enabled!==false;
+    g('cat_email').value = SC.cfg.email||'';
+    g('cat_pwd').value = '';
+    g('cat_pwd').placeholder = SC.cfg.password ? '•••••••• guardada (escribe para cambiarla)' : 'Contraseña de la cuenta lectora';
+    g('cat_collection').value = SC.cfg.collection||'productos';
+    g('cat_field').value = SC.cfg.barcodeField||'auto';
+  }
+  g('cat_modeLine').textContent=catalogModeLabel();
+  renderCatalogStatus();
+  renderCatalogSample();
+}
+function markCatDirty(){ SC.formDirty=true; }
+function initCatalogTab(){
+  SC.formDirty=false;
+  resetPwdVisibility('cat_pwd','catPwdIcon');
+  renderCatalogTab();
+  if(SC.loaded && catalogConfigured() && SC.cfg.enabled!==false && SC.status!=='ok') refreshCatalogStatus(true);
+}
+function showImportedWithoutPrice(){
+  switchTab('products');
+  g('prodFilter').value=''; g('prodSourceFilter').value='noprice';
+  filterProdTable();
+}
+
+async function saveCatalogSettings(){
+  if(!S.isAdmin){ showToast('Solo el administrador puede cambiar esto','error'); return; }
+  const enabled=g('cat_enabled').checked;
+  const collection=(g('cat_collection').value.trim()||'productos').replace(/^\/+|\/+$/g,'');
+  const barcodeField=g('cat_field').value.trim()||'auto';
+  const email=g('cat_email').value.trim();
+  const pwd=g('cat_pwd').value;
+  if(collection.split('/').filter(Boolean).length%2!==1){ showToast('La colección no es válida (ej.: productos)','error'); return; }
+  if(enabled && (!email || (!pwd && !SC.cfg.password))){ showToast('Escribe el correo y la contraseña de la cuenta lectora','warning'); return; }
+  const schemaChanged = collection!==SC.cfg.collection || barcodeField!==(SC.cfg.barcodeField||'auto');
+  const credsChanged  = email.toLowerCase()!==(SC.cfg.email||'').toLowerCase() || !!pwd;
+  const patch={enabled, collection, barcodeField, email, updatedAt:FS.FieldValue.serverTimestamp(), updatedBy:S.user?.email||''};
+  if(pwd) patch.password=pwd;
+  if(schemaChanged) patch.lookupMode=null;
+  const btn=g('catSaveBtn'); btn.disabled=true;
+  try{
+    await withTimeout(db.collection('settings').doc('saasCatalog').set(patch,{merge:true}), 12000);
+    SC.cfg={...SC.cfg, enabled, collection, barcodeField, email, ...(pwd?{password:pwd}:{}), ...(schemaChanged?{lookupMode:null}:{})};
+    if(schemaChanged){ try{ localStorage.removeItem(SAAS_MODE_KEY); }catch(e){} SC.misses.clear(); SC.hits.clear(); SC.sample=null; }
+    SC.authFailUntil=0; SC.formDirty=false;
+    if(credsChanged) await saasAuth.signOut().catch(()=>{});
+    showToast('Configuración del catálogo guardada','success');
+    renderCatalogTab();
+    if(enabled) await testCatalog();
+    else setCatalogStatus('off','La búsqueda en el catálogo está desactivada.');
+  }catch(e){
+    showToast('No se pudo guardar: '+(e.message==='timeout'?'sin respuesta de Firestore':e.message),'error');
+  }finally{ btn.disabled=false; }
+}
+
+/* Inicia sesión, lee 1 producto de ejemplo y detecta cómo guarda el catálogo los códigos */
+async function testCatalog(){
+  if(!catalogConfigured()){ showToast('Primero guarda el correo y la contraseña','warning'); return; }
+  setCatalogStatus('checking','Probando conexión…');
+  SC.authFailUntil=0;
+  try{
+    const u=await ensureSaasAuth();
+    const snap=await withTimeout(saasDb.collection(SC.cfg.collection||'productos').limit(1).get(), 12000);
+    countCatalogReads(1);
+    if(snap.empty){
+      SC.sample=null;
+      setCatalogStatus('error',`Sesión correcta (${u.email}), pero la colección “${SC.cfg.collection}” está vacía o no existe.`);
+      renderCatalogTab(); return;
+    }
+    const d=snap.docs[0];
+    SC.sample={id:d.id, data:d.data()};
+    if((SC.cfg.barcodeField||'auto')==='auto'){
+      const mode=detectModeFromSample(SC.sample);
+      if(mode) rememberMode(mode);
+    }
+    setCatalogStatus('ok','Conectado como '+u.email);
+    renderCatalogTab();
+    showToast('Catálogo maestro conectado ✅','success');
+  }catch(e){
+    const err=toCatalogError(e);
+    setCatalogStatus('error', err.message);
+    showToast(err.message,'error');
+  }
+}
+function detectModeFromSample(s){
+  const bc=pickField(s.data, SAAS_FIELDS.barcode);
+  if(bc.key && /\d{6,}/.test(String(bc.value))){
+    return String(bc.value)===s.id ? 'docid' : 'field:'+bc.key;   // docid = lectura directa, la más barata
+  }
+  if(/^\d{6,14}$/.test(s.id)) return 'docid';
+  return null;
+}
+function sampleVal(v){
+  if(v==null) return '—';
+  if(typeof v?.toDate==='function'){ try{ return v.toDate().toLocaleString('es-MX'); }catch(e){} }
+  if(typeof v==='object'){ try{ v=JSON.stringify(v); }catch(e){ v=String(v); } }
+  v=String(v);
+  return v.length>90 ? v.slice(0,89)+'…' : v;
+}
+function renderCatalogSample(){
+  const box=g('catSample'); if(!box) return;
+  const s=SC.sample;
+  if(!s){ box.innerHTML='<p class="text-[11px] text-slate-400">Pulsa “Probar” para traer un producto de ejemplo y confirmar qué campos del catálogo se usan.</p>'; return; }
+  const m=mapSaasProduct(s.id,{id:s.id, data:s.data});
+  const ROLE={barcode:'Código',name:'Nombre',price:'Precio',category:'Categoría',brand:'Marca',image:'Imagen'};
+  const roleByKey={};
+  Object.entries(m._keys).forEach(([role,k])=>{ if(k && ROLE[role]) roleByKey[k]=ROLE[role]; });
+  const mode=effectiveMode();
+  if(mode && mode!=='docid') roleByKey[mode.slice(6)]='Código';
+  const rows=Object.keys(s.data).sort().slice(0,40).map(k=>`
+    <div class="flex items-start gap-2 py-1 border-b border-slate-100 last:border-0 min-w-0">
+      <code class="text-[11px] text-slate-600 shrink-0 max-w-[40%] break-anywhere">${esc(k)}</code>
+      <span class="text-[11px] text-slate-500 flex-1 min-w-0 break-anywhere">${esc(sampleVal(s.data[k]))}</span>
+      ${roleByKey[k]?`<span class="text-[10px] font-bold bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded-full shrink-0">${roleByKey[k]}</span>`:''}
+    </div>`).join('');
+  const missing=['name','price'].filter(r=>!m._keys[r]).map(r=>ROLE[r]);
+  box.innerHTML=`
+    <p class="text-[11px] text-slate-500 mb-1">ID del documento: <code class="break-anywhere">${esc(s.id)}</code>
+      ${mode==='docid'?'<span class="text-[10px] font-bold bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded-full ml-1">Código</span>':''}</p>
+    <div class="max-h-64 overflow-y-auto">${rows}</div>
+    ${missing.length?`<p class="text-[11px] text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1.5 mt-2">No se reconoció el campo de: ${missing.join(', ')}. Si tu catálogo usa otro nombre, agrégalo en SAAS_FIELDS (index.html).</p>`:''}`;
+}
+
+/* Búsqueda manual en el catálogo (sin vender) */
+async function catalogManualLookup(){
+  const code=g('cat_code').value.trim();
+  const box=g('catPreview');
+  if(!code){ box.innerHTML=''; return; }
+  if(!looksLikeCode(code)){ box.innerHTML=catMsg('warn','Escribe un código de barras: el catálogo se consulta por código, no por nombre.'); return; }
+  if(!catalogConfigured()){ box.innerHTML=catMsg('warn','Primero guarda la cuenta lectora del catálogo.'); return; }
+  box.innerHTML=catMsg('loading','Buscando en el catálogo maestro…');
+  try{
+    const r=await catalogLookup(code,{fresh:true});
+    if(g('cat_code').value.trim()!==code) return;
+    renderCatalogPreview(code, r);
+  }catch(e){ box.innerHTML=catMsg('error', e.message); }
+}
+function refreshCatalogPreview(code){
+  if(g('cat_code')?.value.trim()!==code) return;
+  const h=SC.hits.get(code);
+  renderCatalogPreview(code, h?h.r:null);
+}
+function renderCatalogPreview(code, r){
+  const box=g('catPreview'); if(!box) return;
+  const local=S.products.find(p=>p.barcode===code);
+  const localLine = local ? `
+    <div class="mt-3 bg-white border border-emerald-200 rounded-lg px-3 py-2 text-xs text-emerald-700 flex items-center justify-between gap-2">
+      <span class="min-w-0 break-anywhere"><i class="fa-solid fa-circle-check mr-1"></i>Ya está en tus productos · ${local.needsPrice?'sin precio':fmt(local.price)} · stock ${fmtQty(stockOf(local)||0)}${curBranchName()?' en '+esc(curBranchName()):''}</span>
+      <button onclick="editProduct('${code}')" class="font-bold text-indigo-600 shrink-0">Editar</button>
+    </div>` : '';
+  if(!r){
+    box.innerHTML=catMsg('miss','Ese código no está en el catálogo maestro.') + (localLine || `
+      <button onclick="catalogCreateOwn('${code}')" class="mt-2 w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2.5 rounded-lg min-h-[40px]">
+        <i class="fa-solid fa-plus mr-1"></i>Crear como producto propio</button>`);
+    return;
+  }
+  const m=r.mapped;
+  box.innerHTML=`
+    <div class="border border-cyan-200 bg-cyan-50/50 rounded-xl p-3">
+      <div class="flex gap-3 min-w-0">
+        ${m.image?`<img src="${esc(m.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()" class="w-14 h-14 object-contain rounded-lg bg-white border border-slate-200 shrink-0">`:''}
+        <div class="min-w-0 flex-1">
+          <p class="font-black text-slate-800 text-sm break-anywhere">${esc(m.name)}</p>
+          <p class="text-[11px] text-slate-500 break-anywhere">${[m.brand,m.category].filter(Boolean).map(esc).join(' · ')}</p>
+          <p class="text-[11px] text-slate-400 font-mono break-anywhere">${esc(code)}${m.saasCode && m.saasCode!==code?' · en catálogo: '+esc(m.saasCode):''}</p>
+        </div>
+        <div class="text-right shrink-0">
+          <p class="text-[10px] text-slate-400">Precio catálogo</p>
+          <p class="font-black ${m.price>0?'text-cyan-700':'text-slate-300'} num">${m.price>0?fmt(m.price):'—'}</p>
+        </div>
+      </div>
+      ${localLine || `
+      <div class="grid grid-cols-2 gap-2 mt-3">
+        <button onclick="catalogImportWithModal('${code}')" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2.5 rounded-lg min-h-[40px]"><i class="fa-solid fa-pen-to-square mr-1"></i>Importar con mi precio</button>
+        <button onclick="catalogImportDirect('${code}')" class="bg-white border border-cyan-300 hover:bg-cyan-50 text-cyan-700 text-xs font-bold py-2.5 rounded-lg min-h-[40px]"><i class="fa-solid fa-download mr-1"></i>Importar tal cual</button>
+      </div>`}
+    </div>`;
+}
+function catalogImportWithModal(code){
+  const h=SC.hits.get(code);
+  if(!h){ catalogManualLookup(); return; }
+  showProductModal(false);
+  g('pf_barcode').value=code;
+  applyCatalogToProductForm(h.r, true);
+}
+async function catalogImportDirect(code){
+  try{
+    const p=await importFromCatalog(code);
+    if(!p){ showToast('Ya no aparece en el catálogo','warning'); return; }
+    refreshCatalogPreview(code);
+    if(p.needsPrice) showToast('Importado sin precio: asígnale uno antes de venderlo','warning');
+  }catch(e){ showToast(e.message,'error'); }
+}
+function catalogCreateOwn(code){
+  showProductModal(false);
+  g('pf_barcode').value=code; _pfTried=code;
+  setPfHint('miss','No está en el catálogo maestro: se creará como producto propio.');
 }
 
 /* ════════════════════════════════════
